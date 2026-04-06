@@ -1,0 +1,35 @@
+.main-canvas {
+  flex-grow: 1;
+  background: #ffffff;
+  cursor: crosshair;
+  margin: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
+}
+
+/* 캔버스를 감싸는 컨테이너 (HomePage에서 사용) */
+.canvas-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.main-canvas-wrapper {
+  /* 부모(Home)가 주는 flex 공간을 꽉 채우도록 설정 */
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Konva Stage 내부 실제 캔버스 스타일링 */
+.konvajs-content {
+  background-color: #ffffff !important;
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
+}

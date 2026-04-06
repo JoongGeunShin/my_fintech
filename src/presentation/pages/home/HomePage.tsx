@@ -1,89 +1,64 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Canvas from '../../components/Canvas/Canvas'; // 이전에 만든 Konva용 Canvas
+import { useActivity } from '../../hooks/useActivity';
+import { useKonvaCanvas } from '../../hooks/useKonvaCanvas';
 import './Home.css';
 
 export default function HomePage() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [typeCount, setTypeCount] = useState(0);
+  const { typeCount } = useActivity();
+  const { lines, handleMouseDown, handleMouseMove, handleMouseUp, clearCanvas } = useKonvaCanvas();
+
+  // 창 크기 추적 로직 (useWindowSize 훅 대체)
+  const [windowSize, setWindowSize] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800,
+  });
 
   useEffect(() => {
-    const updateCanvasSize = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = '#646cff';
+    const handleResize = () => {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
     };
-
-    updateCanvasSize();
-    window.addEventListener('resize', updateCanvasSize);
-    return () => window.removeEventListener('resize', updateCanvasSize);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const startDrawing = (e: React.MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  const { width, height } = windowSize;
 
-    setIsDrawing(true);
-    ctx.beginPath();
-    ctx.moveTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-  };
-
-  const draw = (e: React.MouseEvent) => {
-    if (!isDrawing) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-
-    ctx.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => setIsDrawing(false);
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx?.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  useEffect(() => {
-    const handleKeyDown = () => setTypeCount(prev => prev + 1);
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  // 캔버스 크기를 동적으로 계산 (헤더와 푸터 여백 제외)
+  const canvasDimensions = useMemo(() => ({
+    width: width - 40,  // 좌우 여백 20px씩 제외
+    height: height - 350 // 상단 바 + 하단 바 높이만큼 제외
+  }), [width, height]);
 
   return (
     <div className="canvas-container">
+      {/* 상단 상태 바 */}
       <div className="realtime-status">
         <div className="user-badge">
           <span className="dot pulse"></span>
           나의 활동량: <strong>{typeCount}</strong>
         </div>
         <h1>Collab Canvas</h1>
-        <p>화면에 그림을 그리거나 키보드를 입력해보세요!</p>
+        <p>Excalidraw 스타일의 손맛을 느껴보세요!</p>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
-        className="main-canvas"
-      />
+      {/* 캔버스 영역: 계산된 크기를 Props로 전달 */}
+      <div className="main-canvas-wrapper">
+        <Canvas 
+          lines={lines}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          width={canvasDimensions.width}
+          height={canvasDimensions.height}
+        />
+      </div>
 
-      <section id="next-steps" className="canvas-controls">
+      {/* 하단 컨트롤 바 */}
+      <section className="canvas-controls">
         <div id="docs">
           <h2>Brush Tools</h2>
           <button className="counter" onClick={clearCanvas}>
@@ -99,5 +74,5 @@ export default function HomePage() {
         </div>
       </section>
     </div>
-  )
+  );
 }
