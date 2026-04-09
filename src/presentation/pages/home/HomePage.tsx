@@ -4,6 +4,7 @@ import { useActivity } from '../../hooks/useActivity';
 import { useKonvaCanvas } from '../../hooks/useKonvaCanvas';
 import './Home.css';
 
+
 export default function HomePage() {
   const { typeCount } = useActivity();
   const { lines, handleMouseDown, handleMouseMove, handleMouseUp, clearCanvas } = useKonvaCanvas();
