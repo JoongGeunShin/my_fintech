@@ -14,7 +14,7 @@ export default function HomePage() {
     width: typeof window !== 'undefined' ? window.innerWidth : 1200,
     height: typeof window !== 'undefined' ? window.innerHeight : 800,
   });
-
+  
   useEffect(() => {
     const handleResize = () => {
       setWindowSize({
