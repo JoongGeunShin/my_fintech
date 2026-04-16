@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { getDomesticPeriodStockPrice } from '../services/stockService.js';
+import { getDomesticPeriodStockPrice } from '../services/stockPeriodPriceServices.js';
 
 const router = Router();
 

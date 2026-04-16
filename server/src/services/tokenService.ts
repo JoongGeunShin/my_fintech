@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { KisTokenResponse } from '../types/kis.js';
+import type { KisTokenResponse } from '../types/kis/common.js';
 
 interface CachedToken {
   accessToken: string;
