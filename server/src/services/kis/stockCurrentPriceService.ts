@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { KisStockPriceResponse, StockPrice } from '../types/kis/currentPrice';
+import { KisStockPriceResponse, StockPrice } from '../../types/kis/currentPrice';
 import { clearTokenCache, getAccessToken } from './tokenService';
 
 const KIS_BASE_URL = 'https://openapi.koreainvestment.com:9443';
