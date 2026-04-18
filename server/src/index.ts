@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import { errorHandler } from './middleware/errorHandler.js';
 import stockPeriodRouter from './routes/stockPeriod.js';
+import stockPeriodSpecifiedRouter from './routes/stockPeriodSpecified.js';
 import stocksRouter from './routes/stocks.js';
 
 // Express 앱 초기화
@@ -25,6 +26,7 @@ app.get('/health', (_req, res) => {
 // < 단순 조회 >
 app.use('/item/stocks', stocksRouter);
 app.use('/item/stocks/period', stockPeriodRouter);
+app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter);
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
@@ -40,7 +42,7 @@ app.listen(PORT, () => {
   console.log('< 단순 조회 >');
   console.log(`주식 조회: http://localhost:${PORT}/item/stocks/?code=005930\n`);
   console.log(`기간별 주식 조회: http://localhost:${PORT}/item/stocks/period?code=005930&period=D\n`);
-
+  console.log(`기간별 주식 조회 (상세): http://localhost:${PORT}/item/stocks/period/specified?code=005930&period=D&startDate=20200101&endDate=20201231\n`);
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
     'KIS_API_APP_SECRET_KEY',
