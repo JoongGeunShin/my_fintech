@@ -2,6 +2,7 @@ import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
 import { errorHandler } from './middleware/errorHandler.js';
+import stockInvestorRouter from './routes/stockInvestors.js';
 import stockPeriodRouter from './routes/stockPeriod.js';
 import stockPeriodSpecifiedRouter from './routes/stockPeriodSpecified.js';
 import stocksRouter from './routes/stocks.js';
@@ -25,6 +26,7 @@ app.get('/health', (_req, res) => {
 
 // < 단순 조회 >
 app.use('/item/stocks', stocksRouter);
+app.use('/item/stocks/investor', stockInvestorRouter);
 app.use('/item/stocks/period', stockPeriodRouter);
 app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter);
 app.use((_req, res) => {
@@ -40,9 +42,10 @@ app.listen(PORT, () => {
   console.log(`\n서버가 실행 중입니다: http://localhost:${PORT}`);
   console.log(`서버 상태: http://localhost:${PORT}/health`);
   console.log('< 단순 조회 >');
-  console.log(`주식 조회: http://localhost:${PORT}/item/stocks/?code=005930\n`);
-  console.log(`기간별 주식 조회: http://localhost:${PORT}/item/stocks/period?code=005930&period=D\n`);
-  console.log(`기간별 주식 조회 (상세): http://localhost:${PORT}/item/stocks/period/specified?code=005930&period=D&startDate=20200101&endDate=20201231\n`);
+  console.log(`주식 조회: http://localhost:${PORT}/item/stocks/?code=005930`);
+  console.log(`기간별 주식 조회: http://localhost:${PORT}/item/stocks/period?code=005930&period=D`);
+  console.log(`기간별 주식 조회 (상세): http://localhost:${PORT}/item/stocks/period/specified?code=005930&period=D&startDate=20200101&endDate=20201231`);
+  console.log(`투자자별 주식 조회: http://localhost:${PORT}/item/stocks/investor?code=005930\n`);
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
     'KIS_API_APP_SECRET_KEY',
