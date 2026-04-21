@@ -6,6 +6,7 @@ import stockInvestorRouter from './routes/stockInvestors.js';
 import stockPeriodRouter from './routes/stockPeriod.js';
 import stockPeriodSpecifiedRouter from './routes/stockPeriodSpecified.js';
 
+import optionalSearchItemRouter from './routes/optional/optionalSearchItem.js';
 import optionalSearchListRouter from './routes/optional/optionalSearchList.js';
 import stocksRouter from './routes/stocks.js';
 
@@ -31,7 +32,9 @@ app.use('/item/stocks', stocksRouter);
 app.use('/item/stocks/investor', stockInvestorRouter);
 app.use('/item/stocks/period', stockPeriodRouter);
 app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter);
+// < 조건 조회 >
 app.use('/optional/search-list', optionalSearchListRouter); 
+app.use('/optional/search-list/sequence', optionalSearchItemRouter);
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
@@ -51,6 +54,7 @@ app.listen(PORT, () => {
   console.log(`투자자별 주식 조회: http://localhost:${PORT}/item/stocks/investor?code=005930`);
   console.log('< 조건 조회 >');
   console.log(`조건 검색 리스트 조회: http://localhost:${PORT}/optional/search-list`);
+  console.log(`조건 검색 항목 조회: http://localhost:${PORT}/optional/search-list/sequence?sequence=0`);
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
     'KIS_API_APP_SECRET_KEY',
