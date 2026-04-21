@@ -5,6 +5,8 @@ import { errorHandler } from './middleware/errorHandler.js';
 import stockInvestorRouter from './routes/stockInvestors.js';
 import stockPeriodRouter from './routes/stockPeriod.js';
 import stockPeriodSpecifiedRouter from './routes/stockPeriodSpecified.js';
+
+import optionalSearchListRouter from './routes/optional/optionalSearchList.js';
 import stocksRouter from './routes/stocks.js';
 
 // Express 앱 초기화
@@ -29,6 +31,7 @@ app.use('/item/stocks', stocksRouter);
 app.use('/item/stocks/investor', stockInvestorRouter);
 app.use('/item/stocks/period', stockPeriodRouter);
 app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter);
+app.use('/optional/search-list', optionalSearchListRouter); 
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
@@ -45,7 +48,9 @@ app.listen(PORT, () => {
   console.log(`주식 조회: http://localhost:${PORT}/item/stocks/?code=005930`);
   console.log(`기간별 주식 조회: http://localhost:${PORT}/item/stocks/period?code=005930&period=D`);
   console.log(`기간별 주식 조회 (상세): http://localhost:${PORT}/item/stocks/period/specified?code=005930&period=D&startDate=20200101&endDate=20201231`);
-  console.log(`투자자별 주식 조회: http://localhost:${PORT}/item/stocks/investor?code=005930\n`);
+  console.log(`투자자별 주식 조회: http://localhost:${PORT}/item/stocks/investor?code=005930`);
+  console.log('< 조건 조회 >');
+  console.log(`조건 검색 리스트 조회: http://localhost:${PORT}/optional/search-list`);
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
     'KIS_API_APP_SECRET_KEY',
