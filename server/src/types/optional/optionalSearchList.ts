@@ -19,6 +19,6 @@ export interface OptionalSearchList{
 export interface OptionalSearchListItem {
     user_id: string;
     sequence: string;
-    groupNumber: string;
-    conditionNumber: string;
+    groupName: string;
+    conditionName: string;
 }
