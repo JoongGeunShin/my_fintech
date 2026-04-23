@@ -46,8 +46,8 @@ export async function getOptionalSearchList(): Promise<OptionalSearchList>{
             optionalSearchList: output2.map(item => ({
                 user_id: item.user_id,
                 sequence: item.seq,
-                groupNumber: item.grp_nm,
-                conditionNumber: item.condition_nm,
+                groupName: item.grp_nm,
+                conditionName: item.condition_nm,
             })),
         };
 
