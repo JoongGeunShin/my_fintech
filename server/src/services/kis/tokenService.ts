@@ -7,6 +7,7 @@ interface CachedToken {
 }
 
 let tokenCache: CachedToken | null = null;
+let tokenFetchPromise: Promise<string> | null = null;
 
 const KIS_BASE_URL = process.env.KIS_BASE_URL;
 
@@ -18,6 +19,19 @@ export async function getAccessToken(): Promise<string> {
     return tokenCache.accessToken;
   }
 
+  if (tokenFetchPromise) {
+    console.log('[Token] 토큰 발급 중... 대기');
+    return tokenFetchPromise;
+  }
+
+  tokenFetchPromise = _fetchNewToken().finally(() => {
+    tokenFetchPromise = null;
+  });
+
+  return tokenFetchPromise;
+}
+
+async function _fetchNewToken(): Promise<string> {
   const appKey = process.env.KIS_API_APP_KEY;
   const appSecretKey = process.env.KIS_API_APP_SECRET_KEY;
 
@@ -36,11 +50,12 @@ export async function getAccessToken(): Promise<string> {
     },
     {
       headers: { 'Content-Type': 'application/json' },
+      timeout: 10_000,
     }
   );
 
   const { access_token, expires_in } = response.data;
-
+  const now = new Date();
   const expiresAt = new Date(now.getTime() + expires_in * 1000);
   tokenCache = { accessToken: access_token, expiresAt };
   console.log(`[Token] 토큰 발급 완료. 만료: ${expiresAt.toLocaleString('ko-KR')}`);
@@ -50,5 +65,6 @@ export async function getAccessToken(): Promise<string> {
 
 export function clearTokenCache(): void {
   tokenCache = null;
+  tokenFetchPromise = null;
   console.log('[Token] 토큰 캐시 초기화됨');
 }
