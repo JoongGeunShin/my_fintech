@@ -1,15 +1,11 @@
 import { runFullScreening } from '../services/optional/screeningPipelineService.js';
+import { broadcastScreeningUpdate } from '../socket/socketServer.js';
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5분
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
 
-/**
- * 스케줄러 시작
- * - 서버 시작 직후 1회 즉시 실행
- * - 이후 5분마다 반복
- */
 export function startScreeningScheduler(): void {
   if (timer) {
     console.warn('[Scheduler] 이미 실행 중입니다.');
@@ -18,7 +14,6 @@ export function startScreeningScheduler(): void {
 
   console.log('[Scheduler] 조건 검색 스케줄러 시작 (5분 간격)');
 
-  // 즉시 1회 실행
   _runSafe();
 
   timer = setInterval(_runSafe, INTERVAL_MS);
@@ -40,7 +35,8 @@ async function _runSafe(): Promise<void> {
 
   isRunning = true;
   try {
-    await runFullScreening();
+    const result = await runFullScreening();
+    broadcastScreeningUpdate(result);
   } catch (err) {
     console.error('[Scheduler] 스크리닝 실패:', err instanceof Error ? err.message : err);
   } finally {

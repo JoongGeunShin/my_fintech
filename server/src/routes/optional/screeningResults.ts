@@ -4,10 +4,6 @@ import { getScreeningResult, runFullScreening } from '../../services/optional/sc
 
 const router = Router();
 
-/**
- * GET /optional/screening
- * 최신 스크리닝 결과 반환 (캐시 우선)
- */
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const result = await getScreeningResult();
@@ -26,10 +22,6 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /optional/screening/run
- * 수동으로 스크리닝 즉시 실행 (캐시 무시)
- */
 router.post('/run', async (_req: Request, res: Response) => {
   try {
     console.log('[Screening Route] 수동 실행 요청');
@@ -50,10 +42,6 @@ router.post('/run', async (_req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /optional/screening/level/:level
- * 특정 레벨 이상 종목 조회 (Firebase에서 직접)
- */
 router.get('/level/:level', async (req: Request, res: Response) => {
   const level = parseInt(req.params['level'] as string, 10);
   if (isNaN(level) || level < 1) {

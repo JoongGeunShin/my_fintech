@@ -1,11 +1,14 @@
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
+import { createServer } from 'http';
 
-// Firebase Admin 초기화 
 import './config/firebase.js';
 
 import { errorHandler } from './middleware/errorHandler.js';
+import { startScreeningScheduler } from './scheduler/screeningScheduler.js';
+import { initSocketServer } from './socket/socketServer.js';
+
 import optionalSearchItemRouter from './routes/optional/optionalSearchItem.js';
 import optionalSearchListRouter from './routes/optional/optionalSearchList.js';
 import screeningResultsRouter from './routes/optional/screeningResults.js';
@@ -13,9 +16,9 @@ import stockInvestorRouter from './routes/stockInvestors.js';
 import stockPeriodRouter from './routes/stockPeriod.js';
 import stockPeriodSpecifiedRouter from './routes/stockPeriodSpecified.js';
 import stocksRouter from './routes/stocks.js';
-import { startScreeningScheduler } from './scheduler/screeningScheduler.js';
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT ?? 3001;
 
 app.use(express.json());
@@ -26,28 +29,18 @@ app.use(
   })
 );
 
-// ── 서버 상태 ──────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ── 단순 조회 ──────────────────────────────────────────
 app.use('/item/stocks', stocksRouter);
 app.use('/item/stocks/investor', stockInvestorRouter);
 app.use('/item/stocks/period', stockPeriodRouter);
 app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter);
-
-// ── 조건 검색 ──────────────────────────────────────────
 app.use('/optional/search-list', optionalSearchListRouter);
 app.use('/optional/search-list/sequence', optionalSearchItemRouter);
-
-// ── 스크리닝 파이프라인 ─────────────────────────────────
-// GET  /optional/screening          → 최신 결과 (캐시 우선)
-// POST /optional/screening/run      → 수동 즉시 실행
-// GET  /optional/screening/level/:n → 레벨 n 이상 종목
 app.use('/optional/screening', screeningResultsRouter);
 
-// ── 404 ────────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
@@ -57,8 +50,9 @@ app.use((_req, res) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n서버가 실행 중입니다: http://localhost:${PORT}`);
+httpServer.listen(PORT, () => {
+  console.log(`\n서버 실행 중: http://localhost:${PORT}`);
+  console.log(`WebSocket:   ws://localhost:${PORT}`);
   console.log(`서버 상태: http://localhost:${PORT}/health`);
   console.log('\n< 단순 조회 >');
   console.log(`  주식 조회: http://localhost:${PORT}/item/stocks/?code=005930`);
@@ -72,7 +66,6 @@ app.listen(PORT, () => {
   console.log(`  최신 결과: http://localhost:${PORT}/optional/screening`);
   console.log(`  수동 실행: POST http://localhost:${PORT}/optional/screening/run`);
   console.log(`  레벨별: http://localhost:${PORT}/optional/screening/level/2`);
-
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
     'KIS_API_APP_SECRET_KEY',
@@ -85,8 +78,10 @@ app.listen(PORT, () => {
   if (missing.length > 0) {
     console.warn('\n⚠️  누락된 환경변수:', missing.join(', '));
   } else {
-    console.log('\n✅ 환경변수 로드 완료');
+    console.log('✅ 환경변수 로드 완료');
   }
+
+  initSocketServer(httpServer);
 
   const firebaseReady =
     process.env.FIREBASE_PROJECT_ID &&
@@ -96,7 +91,7 @@ app.listen(PORT, () => {
   if (firebaseReady) {
     startScreeningScheduler();
   } else {
-    console.warn('[Scheduler] Firebase 환경변수 미설정으로 스케줄러를 시작하지 않습니다.');
+    console.warn('[Scheduler] Firebase 환경변수 미설정 → 스케줄러 비활성화');
   }
 });
 
