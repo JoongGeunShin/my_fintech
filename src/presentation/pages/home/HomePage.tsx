@@ -1,54 +1,49 @@
 import { useEffect, useMemo, useState } from 'react';
-import Canvas from '../../components/Canvas/Canvas'; // 이전에 만든 Konva용 Canvas
+import Canvas from '../../components/Canvas/Canvas';
+import ScreeningPanel from '../../components/ScreeningPanel/ScreeningPanel';
 import { useActivity } from '../../hooks/useActivity';
 import { useKonvaCanvas } from '../../hooks/useKonvaCanvas';
+import { useScreeningFirestore } from '../../hooks/useScreeningFirestore';
 import './Home.css';
-
 
 export default function HomePage() {
   const { typeCount } = useActivity();
   const { lines, handleMouseDown, handleMouseMove, handleMouseUp, clearCanvas } = useKonvaCanvas();
 
-  // 창 크기 추적 로직 (useWindowSize 훅 대체)
+  // Socket.io 대신 Firestore 직접 구독
+  const { byLevel, topStocks, lastRun, isLoading, error } = useScreeningFirestore();
+
   const [windowSize, setWindowSize] = useState({
     width: typeof window !== 'undefined' ? window.innerWidth : 1200,
     height: typeof window !== 'undefined' ? window.innerHeight : 800,
   });
-  
+
   useEffect(() => {
-    const handleResize = () => {
-      setWindowSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
+    const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const { width, height } = windowSize;
-
-  // 캔버스 크기를 동적으로 계산 (헤더와 푸터 여백 제외)
   const canvasDimensions = useMemo(() => ({
-    width: width - 40,  // 좌우 여백 20px씩 제외
-    height: height - 350 // 상단 바 + 하단 바 높이만큼 제외
-  }), [width, height]);
+    width: windowSize.width - 40,
+    height: Math.max(300, windowSize.height - 350),
+  }), [windowSize]);
 
   return (
     <div className="canvas-container">
       {/* 상단 상태 바 */}
       <div className="realtime-status">
         <div className="user-badge">
-          <span className="dot pulse"></span>
+          <span className="dot pulse" />
           나의 활동량: <strong>{typeCount}</strong>
         </div>
         <h1>Collab Canvas</h1>
         <p>Excalidraw 스타일의 손맛을 느껴보세요!</p>
       </div>
 
-      {/* 캔버스 영역: 계산된 크기를 Props로 전달 */}
+      {/* 캔버스 */}
       <div className="main-canvas-wrapper">
-        <Canvas 
+        <Canvas
           lines={lines}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -62,18 +57,25 @@ export default function HomePage() {
       <section className="canvas-controls">
         <div id="docs">
           <h2>Brush Tools</h2>
-          <button className="counter" onClick={clearCanvas}>
-            Clear Canvas
-          </button>
+          <button className="counter" onClick={clearCanvas}>Clear Canvas</button>
         </div>
         <div id="social">
           <h2>Active Users (3)</h2>
           <ul className="user-list">
-            <li><span className="user-dot" style={{background: '#646cff'}}></span> 나 (그리는 중...)</li>
-            <li><span className="user-dot" style={{background: '#ff4646'}}></span> 참여자 A (타이핑: {typeCount + 5})</li>
+            <li><span className="user-dot" style={{ background: '#646cff' }} /> 나 (그리는 중...)</li>
+            <li><span className="user-dot" style={{ background: '#ff4646' }} /> 참여자 A (타이핑: {typeCount + 5})</li>
           </ul>
         </div>
       </section>
+
+      {/* 스크리닝 패널 - Firestore 실시간 구독 */}
+      <ScreeningPanel
+        byLevel={byLevel}
+        topStocks={topStocks}
+        lastRun={lastRun}
+        isLoading={isLoading}
+        error={error}
+      />
     </div>
   );
 }
