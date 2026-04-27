@@ -1,3 +1,37 @@
+/* Home.css 맨 위에 추가 또는 수정 */
+
+.canvas-container {
+  width: 100%;
+  min-height: 100vh; /* 화면 전체 높이 확보 */
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto; /* 내용이 넘치면 스크롤 생성 */
+  background-color: var(--bg);
+}
+
+/* 캔버스 영역이 너무 커서 밀어내지 않도록 높이 조절 */
+.main-canvas-wrapper {
+  flex-shrink: 0; 
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* 하단 컨트롤 영역 */
+.canvas-controls {
+  display: flex;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  text-align: left;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+/* 스크리닝 패널이 들어갈 자리 */
+.screening-panel {
+  flex-shrink: 0;
+  width: 100%;
+}
 /* 레이아웃 상단 상태 바 */
 .realtime-status {
   padding: 20px;

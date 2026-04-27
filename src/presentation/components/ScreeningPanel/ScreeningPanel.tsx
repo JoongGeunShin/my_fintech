@@ -51,21 +51,20 @@ function StockRow({
   const changeRate = parseFloat(stock.changeRate);
   const isPositive = changeRate >= 0;
   const price = parsePrice(stock.price);
-  const cfg = LEVEL_CONFIG[stock.score as keyof typeof LEVEL_CONFIG];
 
   return (
     <div className="sp-stock-row">
-      <span className="sp-rank">#{rank}</span>
+      {/* 1열: 순위 */}
+      <span className="sp-rank">{rank}</span>
 
+      {/* 2열: 종목명 */}
       <div className="sp-stock-info">
         <span className="sp-stock-name">
           <Highlight text={stock.name} query={searchQuery} />
         </span>
-        <span className="sp-stock-code">
-          <Highlight text={stock.code} query={searchQuery} />
-        </span>
       </div>
 
+      {/* 3열: 가격 및 등락률 (우측 정렬) */}
       <div className="sp-stock-metrics">
         <span className="sp-price">
           {price.toLocaleString('ko-KR')}원
@@ -74,32 +73,6 @@ function StockRow({
           {isPositive ? '▲' : '▼'} {Math.abs(changeRate).toFixed(2)}%
         </span>
       </div>
-
-      <div className="sp-extra-metrics">
-        <span className="sp-metric-item">
-          <span className="sp-metric-label">52H</span>
-          <span className="sp-metric-val">{parsePrice(stock.high52Price).toLocaleString('ko-KR')}</span>
-        </span>
-        <span className="sp-metric-item">
-          <span className="sp-metric-label">52L</span>
-          <span className="sp-metric-val">{parsePrice(stock.low52Price).toLocaleString('ko-KR')}</span>
-        </span>
-      </div>
-
-      <div className="sp-sequences">
-        {stock.passedSequences.slice(0, 5).map((seq) => (
-          <span key={seq} className="sp-seq-badge">{seq}</span>
-        ))}
-        {stock.passedSequences.length > 5 && (
-          <span className="sp-seq-more">+{stock.passedSequences.length - 5}</span>
-        )}
-      </div>
-
-      {cfg && (
-        <span className="sp-level-tag" style={{ color: cfg.color, borderColor: cfg.border, background: cfg.bg }}>
-          L{stock.score}
-        </span>
-      )}
     </div>
   );
 }
