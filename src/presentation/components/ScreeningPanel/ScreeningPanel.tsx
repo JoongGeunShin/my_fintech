@@ -1,31 +1,27 @@
-import type { Timestamp } from 'firebase/firestore';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ScreenedStockClient, ScreeningRun } from '../../hooks/useScreeningFirestore';
+import { useMemo, useRef, useState } from 'react';
+import type { ScreenedStockClient } from '../../hooks/useScreeningFirestore';
 import { parsePrice } from '../../hooks/useScreeningFirestore';
 import './ScreeningPanel.css';
 
 interface ScreeningPanelProps {
   byLevel: Record<number, ScreenedStockClient[]>;
   topStocks: ScreenedStockClient[];
-  lastRun: ScreeningRun | null;
+  otherGroups: Record<string, ScreenedStockClient[]>;
   isLoading: boolean;
   error: string | null;
+  selectedCode?: string | null;
+  onStockSelect?: (code: string, name: string) => void;
 }
 
 const LEVEL_CONFIG = {
-  3: { label: 'LEVEL 3', sublabel: '필수 + 보조 + 세부', color: '#00ff9d', bg: 'rgba(0,255,157,0.08)', border: 'rgba(0,255,157,0.3)' },
-  2: { label: 'LEVEL 2', sublabel: '필수 + 보조',        color: '#00c8ff', bg: 'rgba(0,200,255,0.08)', border: 'rgba(0,200,255,0.3)' },
-  1: { label: 'LEVEL 1', sublabel: '필수 통과',           color: '#aa3bff', bg: 'rgba(170,59,255,0.08)', border: 'rgba(170,59,255,0.3)' },
+  3: { label: 'LEVEL 3', sublabel: '필수 + 보조 + 세부', color: '#00ff9d', bg: 'rgba(0,255,157,0.08)',   border: 'rgba(0,255,157,0.3)' },
+  2: { label: 'LEVEL 2', sublabel: '필수 + 보조',         color: '#00c8ff', bg: 'rgba(0,200,255,0.08)',   border: 'rgba(0,200,255,0.3)' },
 } as const;
 
-function formatTimestamp(ts: Timestamp | null | undefined): string {
-  if (!ts) return '—';
-  try {
-    return ts.toDate().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch { return '—'; }
-}
+const GROUP_COLOR   = '#f5a623';
+const GROUP_BG      = 'rgba(245,166,35,0.08)';
+const GROUP_BORDER  = 'rgba(245,166,35,0.3)';
 
-// 검색어 하이라이트
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
@@ -43,32 +39,42 @@ function StockRow({
   stock,
   rank,
   searchQuery,
+  isSelected,
+  onSelect,
+  showConditions,
 }: {
   stock: ScreenedStockClient;
   rank: number;
   searchQuery: string;
+  isSelected: boolean;
+  onSelect: () => void;
+  showConditions?: boolean;
 }) {
   const changeRate = parseFloat(stock.changeRate);
   const isPositive = changeRate >= 0;
-  const price = parsePrice(stock.price);
+  const price      = parsePrice(stock.price);
 
   return (
-    <div className="sp-stock-row">
-      {/* 1열: 순위 */}
+    <div
+      className={`sp-stock-row ${isSelected ? 'sp-stock-row--selected' : ''}`}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onSelect()}
+    >
       <span className="sp-rank">{rank}</span>
-
-      {/* 2열: 종목명 */}
       <div className="sp-stock-info">
         <span className="sp-stock-name">
           <Highlight text={stock.name} query={searchQuery} />
         </span>
+        {showConditions && stock.passedSequenceInfos && (
+          <span className="sp-condition-names">
+            {stock.passedSequenceInfos.map((info) => info.conditionName).join(' · ')}
+          </span>
+        )}
       </div>
-
-      {/* 3열: 가격 및 등락률 (우측 정렬) */}
       <div className="sp-stock-metrics">
-        <span className="sp-price">
-          {price.toLocaleString('ko-KR')}원
-        </span>
+        <span className="sp-price">{price.toLocaleString('ko-KR')}원</span>
         <span className={`sp-change ${isPositive ? 'positive' : 'negative'}`}>
           {isPositive ? '▲' : '▼'} {Math.abs(changeRate).toFixed(2)}%
         </span>
@@ -81,16 +87,19 @@ function LevelSection({
   level,
   stocks,
   searchQuery,
+  selectedCode,
+  onStockSelect,
 }: {
   level: number;
   stocks: ScreenedStockClient[];
   searchQuery: string;
+  selectedCode?: string | null;
+  onStockSelect?: (code: string, name: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const cfg = LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG];
   if (!cfg) return null;
 
-  // 검색어가 있으면 필터링
   const filtered = searchQuery
     ? stocks.filter(
         (s) =>
@@ -99,7 +108,6 @@ function LevelSection({
       )
     : stocks;
 
-  // 검색 결과 없으면 섹션 숨김
   if (searchQuery && filtered.length === 0) return null;
 
   return (
@@ -127,20 +135,90 @@ function LevelSection({
             <div className="sp-level-empty">해당 레벨의 종목이 없습니다</div>
           ) : (
             <>
-              <div className="sp-table-header">
-                <span>순위</span>
-                <span>종목명 / 코드</span>
-                <span>현재가 / 등락</span>
-                <span>52주 고/저</span>
-                <span>통과 조건</span>
-                <span>레벨</span>
-              </div>
               {filtered.slice(0, 30).map((stock, i) => (
                 <StockRow
                   key={stock.code}
                   stock={stock}
                   rank={i + 1}
                   searchQuery={searchQuery}
+                  isSelected={selectedCode === stock.code}
+                  onSelect={() => onStockSelect?.(stock.code, stock.name)}
+                />
+              ))}
+              {filtered.length > 30 && (
+                <div className="sp-more-hint">+{filtered.length - 30}개 종목 더 있음</div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupSection({
+  groupName,
+  stocks,
+  searchQuery,
+  selectedCode,
+  onStockSelect,
+}: {
+  groupName: string;
+  stocks: ScreenedStockClient[];
+  searchQuery: string;
+  selectedCode?: string | null;
+  onStockSelect?: (code: string, name: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  const filtered = searchQuery
+    ? stocks.filter(
+        (s) =>
+          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.code.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : stocks;
+
+  if (searchQuery && filtered.length === 0) return null;
+
+  return (
+    <div
+      className="sp-level-section"
+      style={{
+        '--level-color':  GROUP_COLOR,
+        '--level-bg':     GROUP_BG,
+        '--level-border': GROUP_BORDER,
+      } as React.CSSProperties}
+    >
+      <button className="sp-level-header" onClick={() => setExpanded((e) => !e)}>
+        <div className="sp-level-title">
+          <span className="sp-level-dot" />
+          <span className="sp-level-name">{groupName}</span>
+          <span className="sp-level-sub">조건 검색 그룹</span>
+        </div>
+        <div className="sp-level-meta">
+          <span className="sp-level-count">
+            {searchQuery ? `${filtered.length} / ${stocks.length}` : `${stocks.length}`}종목
+          </span>
+          <span className="sp-chevron">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="sp-level-body">
+          {filtered.length === 0 ? (
+            <div className="sp-level-empty">해당 그룹의 종목이 없습니다</div>
+          ) : (
+            <>
+              {filtered.slice(0, 30).map((stock, i) => (
+                <StockRow
+                  key={stock.code}
+                  stock={stock}
+                  rank={i + 1}
+                  searchQuery={searchQuery}
+                  isSelected={selectedCode === stock.code}
+                  onSelect={() => onStockSelect?.(stock.code, stock.name)}
+                  showConditions
                 />
               ))}
               {filtered.length > 30 && (
@@ -157,35 +235,32 @@ function LevelSection({
 export default function ScreeningPanel({
   byLevel,
   topStocks,
-  lastRun,
+  otherGroups,
   isLoading,
   error,
+  selectedCode,
+  onStockSelect,
 }: ScreeningPanelProps) {
-  const [pulse, setPulse] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const prevRunAt = useRef<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!lastRun?.runAt) return;
-    const ts = lastRun.runAt.seconds;
-    if (ts === prevRunAt.current) return;
-    prevRunAt.current = ts;
-    const onTimer = setTimeout(() => setPulse(true), 0);
-    const offTimer = setTimeout(() => setPulse(false), 1200);
-    return () => { clearTimeout(onTimer); clearTimeout(offTimer); };
-  }, [lastRun]);
+  const levels = [3, 2] as const;
+  const groupNames = Object.keys(otherGroups);
 
-  const levels = [3, 2, 1] as const;
+  const allStocks = useMemo(() => [
+    ...topStocks,
+    ...groupNames.flatMap((g) => otherGroups[g] ?? []),
+  ], [topStocks, otherGroups, groupNames]);
 
-  // 검색 시 전체 결과 수
   const searchResultCount = useMemo(() => {
     if (!searchQuery) return null;
     const q = searchQuery.toLowerCase();
-    return topStocks.filter(
+    return allStocks.filter(
       (s) => s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)
     ).length;
-  }, [searchQuery, topStocks]);
+  }, [searchQuery, allStocks]);
+
+  const hasAnyData = topStocks.length > 0 || groupNames.some((g) => (otherGroups[g]?.length ?? 0) > 0);
 
   return (
     <section className="screening-panel">
@@ -200,21 +275,23 @@ export default function ScreeningPanel({
           <div className="sp-stats">
             <div className="sp-stat">
               <span className="sp-stat-value">{topStocks.length}</span>
-              <span className="sp-stat-label">통과 종목</span>
+              <span className="sp-stat-label">my_fintech</span>
             </div>
-            <div className="sp-stat-divider" />
-            <div className="sp-stat">
-              <span className={`sp-stat-value ${pulse ? 'sp-pulse-value' : ''}`}>
-                {formatTimestamp(lastRun?.runAt)}
-              </span>
-              <span className="sp-stat-label">최근 갱신</span>
-            </div>
-            {lastRun && (
+            {groupNames.map((g) => (
+              <div key={g} className="sp-stat" style={{ '--level-color': GROUP_COLOR } as React.CSSProperties}>
+                <div className="sp-stat-divider" />
+                <span className="sp-stat-value" style={{ color: GROUP_COLOR }}>
+                  {otherGroups[g]?.length ?? 0}
+                </span>
+                <span className="sp-stat-label">{g}</span>
+              </div>
+            ))}
+            {selectedCode && (
               <>
                 <div className="sp-stat-divider" />
                 <div className="sp-stat">
-                  <span className="sp-stat-value">{(lastRun.durationMs / 1000).toFixed(1)}s</span>
-                  <span className="sp-stat-label">소요 시간</span>
+                  <span className="sp-stat-value sp-selected-indicator">{selectedCode}</span>
+                  <span className="sp-stat-label">선택 종목</span>
                 </div>
               </>
             )}
@@ -259,15 +336,15 @@ export default function ScreeningPanel({
       )}
 
       {/* 데이터 없음 */}
-      {!isLoading && !error && topStocks.length === 0 && (
+      {!isLoading && !error && !hasAnyData && (
         <div className="sp-empty">
           <p>스크리닝 데이터가 없습니다.</p>
           <p className="sp-empty-hint">서버 스크리닝 실행 후 자동으로 표시됩니다.</p>
         </div>
       )}
 
-      {/* 레벨별 섹션 */}
-      {!isLoading && topStocks.length > 0 && (
+      {/* 레벨별 + 기타 그룹 섹션 */}
+      {!isLoading && hasAnyData && (
         <div className="sp-content">
           {levels.map((level) => (
             <LevelSection
@@ -275,6 +352,18 @@ export default function ScreeningPanel({
               level={level}
               stocks={byLevel[level] ?? []}
               searchQuery={searchQuery}
+              selectedCode={selectedCode}
+              onStockSelect={onStockSelect}
+            />
+          ))}
+          {groupNames.map((groupName) => (
+            <GroupSection
+              key={groupName}
+              groupName={groupName}
+              stocks={otherGroups[groupName] ?? []}
+              searchQuery={searchQuery}
+              selectedCode={selectedCode}
+              onStockSelect={onStockSelect}
             />
           ))}
           {searchQuery && searchResultCount === 0 && (

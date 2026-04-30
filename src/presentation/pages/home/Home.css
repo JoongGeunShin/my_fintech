@@ -27,10 +27,49 @@
   flex-shrink: 0;
 }
 
-/* 스크리닝 패널이 들어갈 자리 */
-.screening-panel {
+/* 하단 패널 2열 레이아웃 */
+.bottom-panels {
+  display: flex;
+  flex-direction: row;
+  border-top: 2px solid var(--border);
+  min-height: 560px;
   flex-shrink: 0;
   width: 100%;
+  overflow: hidden;
+}
+
+.bottom-panels .screening-panel {
+  flex: 3;
+  min-width: 0;       /* flex item 이 content 크기로 축소되도록 */
+  border-top: none;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: 700px;
+}
+
+.bottom-panels .realtime-panel {
+  flex: 2;
+  min-width: 280px;
+  max-width: 420px;
+  overflow-y: auto;
+  max-height: 700px;
+  border-left: none;  /* screening-panel의 border-right로 충분 */
+}
+
+@media (max-width: 900px) {
+  .bottom-panels {
+    flex-direction: column;
+  }
+  .bottom-panels .screening-panel {
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .bottom-panels .realtime-panel {
+    max-width: 100%;
+    min-width: 0;
+    max-height: 500px;
+  }
 }
 /* 레이아웃 상단 상태 바 */
 .realtime-status {

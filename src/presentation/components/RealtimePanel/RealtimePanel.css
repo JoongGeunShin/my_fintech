@@ -1,0 +1,321 @@
+/* ── 컨테이너 ─────────────────────────────────────── */
+.realtime-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  letter-spacing: -0.01em;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+}
+
+.rt-empty-state {
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── 플레이스홀더 ──────────────────────────────────── */
+.rt-placeholder {
+  text-align: center;
+  color: var(--text);
+  opacity: 0.4;
+  padding: 40px 24px;
+}
+
+.rt-placeholder-arrow {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.rt-placeholder-main {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text-h);
+  opacity: 1;
+}
+
+.rt-placeholder-sub {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── 헤더 ─────────────────────────────────────────── */
+.rt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 95%, var(--border) 5%);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-shrink: 0;
+}
+
+.rt-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rt-dot--on {
+  background: #00ff9d;
+  box-shadow: 0 0 8px rgba(0, 255, 157, 0.6);
+  animation: rt-pulse 2s ease-in-out infinite;
+}
+
+.rt-dot--off {
+  background: #ff4646;
+}
+
+@keyframes rt-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.rt-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.rt-code {
+  font-size: 11px;
+  color: var(--text);
+  opacity: 0.45;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.rt-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.rt-current-price {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-change-rate {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-up   { color: #ff4d4d; }
+.rt-down { color: #3b9eff; }
+
+/* ── 바디 ─────────────────────────────────────────── */
+.rt-body {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── 섹션 ─────────────────────────────────────────── */
+.rt-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+.rt-section-trades {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rt-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 2;
+}
+
+.rt-ob-time,
+.rt-trade-acc {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+  letter-spacing: 0;
+}
+
+/* ── 대기 상태 ────────────────────────────────────── */
+.rt-waiting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 20px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.4;
+}
+
+.rt-waiting-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: rt-bounce 1.2s ease-in-out infinite;
+}
+.rt-waiting-dot:nth-child(2) { animation-delay: 0.2s; }
+.rt-waiting-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes rt-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+/* ── 호가창 테이블 ────────────────────────────────── */
+.rt-ob-table {
+  padding: 0 8px 8px;
+}
+
+.rt-ob-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 12px;
+  font-size: 10px;
+  margin: 2px 0;
+  border-radius: 4px;
+}
+
+.rt-ob-total-ask {
+  background: rgba(255, 77, 77, 0.06);
+  color: #ff4d4d;
+}
+
+.rt-ob-total-bid {
+  background: rgba(59, 158, 255, 0.06);
+  color: #3b9eff;
+}
+
+.rt-ob-total-label { opacity: 0.7; }
+.rt-ob-total-val   { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* 호가 행 */
+.rt-ob-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 70px;
+  align-items: center;
+  padding: 3px 4px;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 3px;
+  transition: background 0.1s;
+}
+.rt-ob-row:hover { background: color-mix(in srgb, var(--border) 30%, transparent); }
+
+.rt-ob-ask .rt-ob-price { color: #ff4d4d; font-weight: 600; text-align: right; }
+.rt-ob-ask .rt-ob-vol   { color: var(--text); opacity: 0.7; text-align: right; font-size: 11px; }
+
+.rt-ob-bid .rt-ob-price { color: #3b9eff; font-weight: 600; text-align: left; }
+.rt-ob-bid .rt-ob-vol   { color: var(--text); opacity: 0.7; text-align: left; font-size: 11px; }
+
+/* 볼륨 바 */
+.rt-bar-wrap {
+  height: 10px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+  display: flex;
+}
+
+/* 매도: 바가 오른쪽(가격 쪽)에서 시작해 왼쪽으로 */
+.rt-bar-ask { justify-content: flex-end; }
+/* 매수: 바가 왼쪽(가격 쪽)에서 시작해 오른쪽으로 */
+.rt-bar-bid { justify-content: flex-start; }
+
+.rt-bar-ask .rt-bar { background: rgba(255, 77, 77, 0.55); height: 100%; }
+.rt-bar-bid .rt-bar { background: rgba(59, 158, 255, 0.55); height: 100%; }
+
+/* 스프레드 구분선 */
+.rt-ob-spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  margin: 2px 0;
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.35;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  letter-spacing: 0.05em;
+}
+
+.rt-ob-spread-val { font-weight: 600; }
+
+/* ── 체결 리스트 ──────────────────────────────────── */
+.rt-trade-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.rt-trade-header {
+  display: grid;
+  grid-template-columns: 60px 1fr 60px 24px;
+  gap: 6px;
+  padding: 4px 20px;
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.35;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+
+.rt-trade-header span:nth-child(2),
+.rt-trade-header span:nth-child(3) { text-align: right; }
+
+.rt-trade-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 60px 24px;
+  gap: 6px;
+  padding: 5px 20px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  transition: background 0.1s;
+}
+
+.rt-trade-row:hover { background: color-mix(in srgb, var(--border) 20%, transparent); }
+
+.rt-trade-time  { color: var(--text); opacity: 0.4; font-size: 11px; }
+.rt-trade-price { text-align: right; font-weight: 600; color: var(--text-h); }
+.rt-trade-vol   { text-align: right; color: var(--text); opacity: 0.6; font-size: 11px; }
+.rt-trade-dir   { text-align: center; font-size: 10px; }

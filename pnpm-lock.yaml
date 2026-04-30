@@ -44,6 +44,9 @@ importers:
       socket.io-client:
         specifier: ^4.8.3
         version: 4.8.3
+      ws:
+        specifier: ^8.20.0
+        version: 8.20.0
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.4
@@ -57,6 +60,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@vanilla-extract/next-plugin':
         specifier: ^2.5.1
         version: 2.5.1(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@24.12.0)(babel-plugin-macros@3.1.0)(esbuild@0.27.4)(next@16.2.1(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(babel-plugin-macros@3.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(terser@5.46.1)(tsx@4.21.0)(webpack@5.105.4(esbuild@0.27.4))
@@ -2582,6 +2588,18 @@ packages:
 
   ws@8.18.3:
     resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.20.0:
+    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -5231,6 +5249,8 @@ snapshots:
       strip-ansi: 6.0.1
 
   ws@8.18.3: {}
+
+  ws@8.20.0: {}
 
   xmlhttprequest-ssl@2.1.2: {}
 

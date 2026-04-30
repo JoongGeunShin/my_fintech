@@ -269,15 +269,21 @@
 
 .sp-stock-row {
   display: grid;
-  grid-template-columns: 36px 1fr 100px; /* 순위 | 종목명 | 가격정보 */
+  grid-template-columns: 36px 1fr 100px;
   align-items: center;
   padding: 14px 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   transition: background 0.15s;
-  min-width: auto; /* 기존 700px 제거! 중요! */
+  cursor: pointer;
+  min-width: auto;
 }
 .sp-stock-row:hover { background: var(--level-bg); }
 .sp-stock-row:last-child { border-bottom: none; }
+.sp-stock-row--selected {
+  background: color-mix(in srgb, var(--level-bg) 80%, var(--level-color) 20%);
+  border-left: 3px solid var(--level-color);
+  padding-left: 13px;
+}
 
 .sp-rank { 
   font-size: 14px; 
@@ -396,14 +402,29 @@
   border-top: 1px dashed var(--border);
 }
 
+.sp-selected-indicator {
+  color: #f5a623;
+  font-size: 12px;
+}
+
+.sp-condition-names {
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
 /* ── 반응형 ──────────────────────────────────────── */
 @media (max-width: 1100px) {
-  .sp-content { 
-    grid-template-columns: repeat(2, 1fr); /* 화면 좁아지면 2열 */
+  .sp-content {
+    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 768px) {
-  .sp-content { 
-    grid-template-columns: 1fr; /* 모바일에서는 1열 */
+  .sp-content {
+    grid-template-columns: 1fr;
   }
 }

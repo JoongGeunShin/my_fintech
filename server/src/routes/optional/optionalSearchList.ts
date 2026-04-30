@@ -3,7 +3,7 @@ import { getOptionalSearchList } from '../../services/optional/optionalSearchLis
 
 const router = Router();
 
-router.get('/', async (req: Request,res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
     try {
         console.log(`[Optional Search List] 서버 환경변수 계정으로 조건 검색 리스트 요청 중...`);
         const optionalSearchList = await getOptionalSearchList();

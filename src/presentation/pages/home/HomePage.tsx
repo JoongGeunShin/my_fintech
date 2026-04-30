@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Canvas from '../../components/Canvas/Canvas';
+import RealtimePanel from '../../components/RealtimePanel/RealtimePanel';
 import ScreeningPanel from '../../components/ScreeningPanel/ScreeningPanel';
 import { useActivity } from '../../hooks/useActivity';
 import { useKonvaCanvas } from '../../hooks/useKonvaCanvas';
+import { useRealtimeOrderBook, useRealtimeTrade } from '../../hooks/useRealtimeStock';
 import { useScreeningFirestore } from '../../hooks/useScreeningFirestore';
 import './Home.css';
 
@@ -10,24 +12,49 @@ export default function HomePage() {
   const { typeCount } = useActivity();
   const { lines, handleMouseDown, handleMouseMove, handleMouseUp, clearCanvas } = useKonvaCanvas();
 
-  // Socket.io 대신 Firestore 직접 구독
-  const { byLevel, topStocks, lastRun, isLoading, error } = useScreeningFirestore();
+  const { byLevel, topStocks, otherGroups, isLoading, error } = useScreeningFirestore();
 
-  const [windowSize, setWindowSize] = useState({
-    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
-    height: typeof window !== 'undefined' ? window.innerHeight : 800,
-  });
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [selectedName, setSelectedName] = useState<string | undefined>(undefined);
+
+  const { orderBook, isConnected: obConnected } = useRealtimeOrderBook(selectedCode);
+  const { latestTrade, trades, isConnected: trConnected } = useRealtimeTrade(selectedCode, 50);
+
+  const isConnected = obConnected || trConnected;
+
+  // 캔버스 컨테이너의 실제 너비를 측정
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const [canvasWidth, setCanvasWidth] = useState(window.innerWidth - 40);
+  const [windowHeight, setWindowHeight] = useState(window.innerHeight);
 
   useEffect(() => {
-    const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    const wrapper = canvasWrapperRef.current;
+    if (!wrapper) return;
+
+    const ro = new ResizeObserver((entries) => {
+      const { width } = entries[0].contentRect;
+      setCanvasWidth(Math.max(300, width - 40));
+    });
+    ro.observe(wrapper);
+
+    const handleResize = () => setWindowHeight(window.innerHeight);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   const canvasDimensions = useMemo(() => ({
-    width: windowSize.width - 40,
-    height: Math.max(300, windowSize.height - 350),
-  }), [windowSize]);
+    width: canvasWidth,
+    height: Math.max(300, windowHeight - 350),
+  }), [canvasWidth, windowHeight]);
+
+  const handleStockSelect = useCallback((code: string, name: string) => {
+    setSelectedCode((prev) => prev === code ? null : code);
+    setSelectedName((prev) => prev === name ? undefined : name);
+  }, []);
 
   return (
     <div className="canvas-container">
@@ -42,7 +69,7 @@ export default function HomePage() {
       </div>
 
       {/* 캔버스 */}
-      <div className="main-canvas-wrapper">
+      <div className="main-canvas-wrapper" ref={canvasWrapperRef}>
         <Canvas
           lines={lines}
           onMouseDown={handleMouseDown}
@@ -68,14 +95,26 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 스크리닝 패널 - Firestore 실시간 구독 */}
-      <ScreeningPanel
-        byLevel={byLevel}
-        topStocks={topStocks}
-        lastRun={lastRun}
-        isLoading={isLoading}
-        error={error}
-      />
+      {/* 하단 패널: 스크리닝(좌) + 실시간(우) */}
+      <div className="bottom-panels">
+        <ScreeningPanel
+          byLevel={byLevel}
+          topStocks={topStocks}
+          otherGroups={otherGroups}
+          isLoading={isLoading}
+          error={error}
+          selectedCode={selectedCode}
+          onStockSelect={handleStockSelect}
+        />
+        <RealtimePanel
+          code={selectedCode}
+          name={selectedName}
+          orderBook={orderBook}
+          trades={trades}
+          latestTrade={latestTrade}
+          isConnected={isConnected}
+        />
+      </div>
     </div>
   );
 }
