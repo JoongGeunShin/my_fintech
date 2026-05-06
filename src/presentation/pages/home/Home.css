@@ -1,161 +1,258 @@
-/* Home.css 맨 위에 추가 또는 수정 */
+/* src/presentation/pages/home/Home.css */
 
-.canvas-container {
+/* ── 루트 컨테이너 ──────────────────────────────────────────── */
+.home-root {
   width: 100%;
-  min-height: 100vh; /* 화면 전체 높이 확보 */
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow-y: auto; /* 내용이 넘치면 스크롤 생성 */
-  background-color: var(--bg);
-}
-
-/* 캔버스 영역이 너무 커서 밀어내지 않도록 높이 조절 */
-.main-canvas-wrapper {
-  flex-shrink: 0; 
-  display: flex;
-  justify-content: center;
-  padding: 20px;
-}
-
-/* 하단 컨트롤 영역 */
-.canvas-controls {
-  display: flex;
   background: var(--bg);
-  border-top: 1px solid var(--border);
-  text-align: left;
-  z-index: 10;
-  flex-shrink: 0;
-}
-
-/* 하단 패널 2열 레이아웃 */
-.bottom-panels {
-  display: flex;
-  flex-direction: row;
-  border-top: 2px solid var(--border);
-  min-height: 560px;
-  flex-shrink: 0;
-  width: 100%;
-  overflow: hidden;
-}
-
-.bottom-panels .screening-panel {
-  flex: 3;
-  min-width: 0;       /* flex item 이 content 크기로 축소되도록 */
-  border-top: none;
-  border-right: 1px solid var(--border);
   overflow-y: auto;
-  max-height: 700px;
+  overflow-x: hidden;
 }
 
-.bottom-panels .realtime-panel {
-  flex: 2;
-  min-width: 280px;
-  max-width: 420px;
-  overflow-y: auto;
-  max-height: 700px;
-  border-left: none;  /* screening-panel의 border-right로 충분 */
-}
-
-@media (max-width: 900px) {
-  .bottom-panels {
-    flex-direction: column;
-  }
-  .bottom-panels .screening-panel {
-    max-height: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-  .bottom-panels .realtime-panel {
-    max-width: 100%;
-    min-width: 0;
-    max-height: 500px;
-  }
-}
-/* 레이아웃 상단 상태 바 */
-.realtime-status {
-  padding: 20px;
-  text-align: center;
-}
-
-/* 하단 컨트롤 영역 */
-.canvas-controls {
-  display: flex;
+/* ── 상단 캔버스 섹션 ───────────────────────────────────────── */
+.home-canvas-section {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
   background: var(--bg);
-  border-top: 1px solid var(--border);
-  text-align: left;
-  z-index: 10;
 }
 
-#next-steps {
+.home-canvas-header {
   display: flex;
-  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 95%, var(--accent) 5%);
 }
 
-#next-steps > div {
-  flex: 1 1 0;
-  padding: 32px;
+.home-canvas-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-h);
+  letter-spacing: -0.02em;
 }
 
-#docs {
-  border-right: 1px solid var(--border);
-}
-
-/* 공통 버튼 스타일 (Clear Canvas 등) */
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
-  cursor: pointer;
-}
-
-.counter:hover {
-  border-color: var(--accent-border);
-}
-
-/* 사용자 리스트 스타일 */
-.user-list {
-  list-style: none;
-  padding: 0;
-  font-size: 14px;
-  margin-top: 10px;
-}
-
-.user-dot {
-  display: inline-block;
+.dot.pulse {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 8px;
+  background: var(--accent, #00ff9d);
+  animation: pulse-ring 1.8s ease-out infinite;
+  flex-shrink: 0;
 }
 
-/* 반응형 처리 */
-@media (max-width: 1024px) {
-  .canvas-controls {
-    flex-direction: column;
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(0,255,157,0.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(0,255,157,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,255,157,0); }
+}
+
+.home-canvas-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.7;
+}
+
+.home-clear-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.home-clear-btn:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.25);
+}
+
+.main-canvas-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 16px 20px;
+}
+
+/* ── 메인 패널 (2열) ────────────────────────────────────────── */
+.home-main {
+  display: flex;
+  flex: 1;
+  min-height: 640px;
+  overflow: hidden;
+}
+
+/* ── 좌측 스크리닝 열 ───────────────────────────────────────── */
+.home-screening-col {
+  flex: 0 0 600px;          /* 네이버페이처럼 3열 랭킹이 넉넉하게 들어오도록 */
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── 우측 차트+호가 열 ──────────────────────────────────────── */
+.home-chart-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #131722;
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+}
+
+.home-chart-col.visible {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+/* 차트 영역 */
+.home-chart-wrap {
+  flex: 0 0 420px;
+  min-height: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+
+/* 호가+시세 영역 */
+.home-realtime-wrap {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* 빈 상태 */
+.home-chart-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(255,255,255,0.25);
+  font-size: 14px;
+  background: #131722;
+}
+
+.home-chart-empty-arrow {
+  font-size: 28px;
+  margin-bottom: 6px;
+  opacity: 0.4;
+}
+
+/* ── 반응형 ─────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .home-screening-col {
+    flex: 0 0 440px;
   }
-  
-  #docs {
+}
+
+@media (max-width: 900px) {
+  .home-main {
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .home-screening-col {
+    flex: none;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    max-height: 520px;
   }
 
-  #next-steps > div {
-    padding: 24px 20px;
-    text-align: center;
+  .home-chart-col {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    min-height: 560px;
+  }
+
+  .home-chart-wrap {
+    flex: 0 0 320px;
+  }
+
+  .home-realtime-wrap {
+    max-height: 400px;
   }
 }
 
-/* 기타 데코레이션 요소 (필요 시 유지) */
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
+/* ── ScreeningPanel 네이버페이 스타일 오버라이드 ─────────────── */
+/* sp-content를 3열로 → 이미 CSS에 있지만 home 컨텍스트에서 확인 */
+.home-screening-col .sp-content {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 0;
 }
 
-@media (max-width: 1024px) {
-  #spacer { height: 48px; }
+/* 네이버페이처럼 각 레벨 섹션이 컬럼으로 나뉘어 보이도록 */
+.home-screening-col .sp-level-section {
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid var(--border);
+}
+.home-screening-col .sp-level-section:last-child {
+  border-right: none;
+}
+
+/* 헤더 타이틀 스타일 (거래량 상위 등 텍스트처럼) */
+.home-screening-col .sp-level-header {
+  padding: 12px 16px 10px;
+  border-left: none;
+  border-bottom: 2px solid var(--level-color);
+  background: transparent;
+}
+
+.home-screening-col .sp-level-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 종목 행을 네이버페이처럼 compact하게 */
+.home-screening-col .sp-stock-row {
+  grid-template-columns: 28px 1fr auto;
+  padding: 9px 14px;
+}
+
+.home-screening-col .sp-rank {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  font-weight: 500;
+}
+
+.home-screening-col .sp-stock-name {
+  font-size: 13px;
+}
+
+.home-screening-col .sp-price {
+  font-size: 13px;
+}
+
+.home-screening-col .sp-change {
+  font-size: 11px;
+}
+
+/* 검색바를 패널 상단 전체 너비로 */
+.home-screening-col .sp-search-wrap {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+}
+
+/* 섹션 헤더 chevron 제거 (네이버페이는 접기 없음) */
+.home-screening-col .sp-chevron {
+  display: none;
 }

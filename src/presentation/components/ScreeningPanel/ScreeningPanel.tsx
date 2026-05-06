@@ -1,3 +1,4 @@
+// src/presentation/components/ScreeningPanel/ScreeningPanel.tsx
 import { useMemo, useRef, useState } from 'react';
 import type { ScreenedStockClient } from '../../hooks/useScreeningFirestore';
 import { parsePrice } from '../../hooks/useScreeningFirestore';
@@ -18,9 +19,10 @@ const LEVEL_CONFIG = {
   2: { label: 'LEVEL 2', sublabel: '필수 + 보조',         color: '#00c8ff', bg: 'rgba(0,200,255,0.08)',   border: 'rgba(0,200,255,0.3)' },
 } as const;
 
-const GROUP_COLOR   = '#f5a623';
-const GROUP_BG      = 'rgba(245,166,35,0.08)';
-const GROUP_BORDER  = 'rgba(245,166,35,0.3)';
+// 초단기 그룹 (기타 그룹 중 첫 번째 or "초단기" 포함)
+const SHORT_COLOR  = '#f5a623';
+const SHORT_BG     = 'rgba(245,166,35,0.08)';
+const SHORT_BORDER = 'rgba(245,166,35,0.3)';
 
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>;
@@ -83,23 +85,32 @@ function StockRow({
   );
 }
 
-function LevelSection({
-  level,
+// ── 하나의 랭킹 열 컴포넌트 ──────────────────────────────────
+function RankingColumn({
+  title,
+  sublabel,
+  color,
+  bg,
+  border,
   stocks,
   searchQuery,
   selectedCode,
   onStockSelect,
+  maxRows = 10,
+  showConditions,
 }: {
-  level: number;
+  title: string;
+  sublabel: string;
+  color: string;
+  bg: string;
+  border: string;
   stocks: ScreenedStockClient[];
   searchQuery: string;
   selectedCode?: string | null;
   onStockSelect?: (code: string, name: string) => void;
+  maxRows?: number;
+  showConditions?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
-  const cfg = LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG];
-  if (!cfg) return null;
-
   const filtered = searchQuery
     ? stocks.filter(
         (s) =>
@@ -108,130 +119,46 @@ function LevelSection({
       )
     : stocks;
 
-  if (searchQuery && filtered.length === 0) return null;
-
   return (
     <div
-      className="sp-level-section"
-      style={{ '--level-color': cfg.color, '--level-bg': cfg.bg, '--level-border': cfg.border } as React.CSSProperties}
+      className="sp-ranking-col"
+      style={{ '--col-color': color, '--col-bg': bg, '--col-border': border } as React.CSSProperties}
     >
-      <button className="sp-level-header" onClick={() => setExpanded((e) => !e)}>
-        <div className="sp-level-title">
-          <span className="sp-level-dot" />
-          <span className="sp-level-name">{cfg.label}</span>
-          <span className="sp-level-sub">{cfg.sublabel}</span>
+      {/* 헤더 */}
+      <div className="sp-col-header">
+        <div className="sp-col-header-left">
+          <span className="sp-col-dot" />
+          <div>
+            <div className="sp-col-title">{title}</div>
+            <div className="sp-col-sub">{sublabel}</div>
+          </div>
         </div>
-        <div className="sp-level-meta">
-          <span className="sp-level-count">
-            {searchQuery ? `${filtered.length} / ${stocks.length}` : `${stocks.length}`}종목
-          </span>
-          <span className="sp-chevron">{expanded ? '▲' : '▼'}</span>
-        </div>
-      </button>
+        <span className="sp-col-count">{filtered.length}종목</span>
+      </div>
 
-      {expanded && (
-        <div className="sp-level-body">
-          {filtered.length === 0 ? (
-            <div className="sp-level-empty">해당 레벨의 종목이 없습니다</div>
-          ) : (
-            <>
-              {filtered.slice(0, 30).map((stock, i) => (
-                <StockRow
-                  key={stock.code}
-                  stock={stock}
-                  rank={i + 1}
-                  searchQuery={searchQuery}
-                  isSelected={selectedCode === stock.code}
-                  onSelect={() => onStockSelect?.(stock.code, stock.name)}
-                />
-              ))}
-              {filtered.length > 30 && (
-                <div className="sp-more-hint">+{filtered.length - 30}개 종목 더 있음</div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* 목록 */}
+      <div className="sp-col-body">
+        {filtered.length === 0 ? (
+          <div className="sp-col-empty">해당하는 종목이 없습니다</div>
+        ) : (
+          filtered.slice(0, maxRows).map((stock, i) => (
+            <StockRow
+              key={stock.code}
+              stock={stock}
+              rank={i + 1}
+              searchQuery={searchQuery}
+              isSelected={selectedCode === stock.code}
+              onSelect={() => onStockSelect?.(stock.code, stock.name)}
+              showConditions={showConditions}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
-function GroupSection({
-  groupName,
-  stocks,
-  searchQuery,
-  selectedCode,
-  onStockSelect,
-}: {
-  groupName: string;
-  stocks: ScreenedStockClient[];
-  searchQuery: string;
-  selectedCode?: string | null;
-  onStockSelect?: (code: string, name: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-
-  const filtered = searchQuery
-    ? stocks.filter(
-        (s) =>
-          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.code.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : stocks;
-
-  if (searchQuery && filtered.length === 0) return null;
-
-  return (
-    <div
-      className="sp-level-section"
-      style={{
-        '--level-color':  GROUP_COLOR,
-        '--level-bg':     GROUP_BG,
-        '--level-border': GROUP_BORDER,
-      } as React.CSSProperties}
-    >
-      <button className="sp-level-header" onClick={() => setExpanded((e) => !e)}>
-        <div className="sp-level-title">
-          <span className="sp-level-dot" />
-          <span className="sp-level-name">{groupName}</span>
-          <span className="sp-level-sub">조건 검색 그룹</span>
-        </div>
-        <div className="sp-level-meta">
-          <span className="sp-level-count">
-            {searchQuery ? `${filtered.length} / ${stocks.length}` : `${stocks.length}`}종목
-          </span>
-          <span className="sp-chevron">{expanded ? '▲' : '▼'}</span>
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="sp-level-body">
-          {filtered.length === 0 ? (
-            <div className="sp-level-empty">해당 그룹의 종목이 없습니다</div>
-          ) : (
-            <>
-              {filtered.slice(0, 30).map((stock, i) => (
-                <StockRow
-                  key={stock.code}
-                  stock={stock}
-                  rank={i + 1}
-                  searchQuery={searchQuery}
-                  isSelected={selectedCode === stock.code}
-                  onSelect={() => onStockSelect?.(stock.code, stock.name)}
-                  showConditions
-                />
-              ))}
-              {filtered.length > 30 && (
-                <div className="sp-more-hint">+{filtered.length - 30}개 종목 더 있음</div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
+// ── 메인 패널 ────────────────────────────────────────────────
 export default function ScreeningPanel({
   byLevel,
   topStocks,
@@ -244,133 +171,100 @@ export default function ScreeningPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const levels = [3, 2] as const;
-  const groupNames = Object.keys(otherGroups);
+  // 초단기 그룹 결정
+  const shortTermKey = useMemo(() =>
+    Object.keys(otherGroups).find((k) =>
+      k.includes('초단기') || k.includes('단기') || k.includes('short')
+    ) ?? Object.keys(otherGroups)[0]
+  , [otherGroups]);
 
-  const allStocks = useMemo(() => [
-    ...topStocks,
-    ...groupNames.flatMap((g) => otherGroups[g] ?? []),
-  ], [topStocks, otherGroups, groupNames]);
+  const shortTermStocks = shortTermKey ? (otherGroups[shortTermKey] ?? []) : topStocks;
 
-  const searchResultCount = useMemo(() => {
-    if (!searchQuery) return null;
-    const q = searchQuery.toLowerCase();
-    return allStocks.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)
-    ).length;
-  }, [searchQuery, allStocks]);
+  const level3 = byLevel[3] ?? [];
+  const level2 = byLevel[2] ?? [];
 
-  const hasAnyData = topStocks.length > 0 || groupNames.some((g) => (otherGroups[g]?.length ?? 0) > 0);
+  // 로딩 상태
+  if (isLoading) {
+    return (
+      <section className="screening-panel sp-loading-state">
+        <div className="sp-connecting-dots">
+          <span /><span /><span />
+        </div>
+        <p>스크리닝 데이터 로딩 중...</p>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="screening-panel sp-error-state">
+        <p className="sp-error-msg">⚠ {error}</p>
+      </section>
+    );
+  }
 
   return (
     <section className="screening-panel">
-      {/* 헤더 */}
-      <div className="sp-header">
-        <div className="sp-header-left">
-          <div className={`sp-status-dot ${isLoading ? 'loading' : error ? 'offline' : 'online'}`} />
-          <h2 className="sp-title">조건 스크리닝</h2>
-          <span className="sp-subtitle">Firebase 실시간</span>
-        </div>
-        <div className="sp-header-right">
-          <div className="sp-stats">
-            <div className="sp-stat">
-              <span className="sp-stat-value">{topStocks.length}</span>
-              <span className="sp-stat-label">my_fintech</span>
-            </div>
-            {groupNames.map((g) => (
-              <div key={g} className="sp-stat" style={{ '--level-color': GROUP_COLOR } as React.CSSProperties}>
-                <div className="sp-stat-divider" />
-                <span className="sp-stat-value" style={{ color: GROUP_COLOR }}>
-                  {otherGroups[g]?.length ?? 0}
-                </span>
-                <span className="sp-stat-label">{g}</span>
-              </div>
-            ))}
-            {selectedCode && (
-              <>
-                <div className="sp-stat-divider" />
-                <div className="sp-stat">
-                  <span className="sp-stat-value sp-selected-indicator">{selectedCode}</span>
-                  <span className="sp-stat-label">선택 종목</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 검색 바 */}
-      <div className="sp-search-bar">
-        <div className="sp-search-inner">
-          <span className="sp-search-icon">⌕</span>
-          <input
-            ref={searchRef}
-            className="sp-search-input"
-            type="text"
-            placeholder="종목명 또는 종목코드로 검색..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="sp-search-clear" onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }}>
-              ✕
-            </button>
-          )}
-        </div>
+      {/* 검색바 */}
+      <div className="sp-search-wrap">
+        <input
+          ref={searchRef}
+          className="sp-search"
+          type="text"
+          placeholder="종목명·코드 검색"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
         {searchQuery && (
-          <span className="sp-search-result-count">
-            {searchResultCount === 0 ? '결과 없음' : `${searchResultCount}개 종목 검색됨`}
-          </span>
+          <button className="sp-search-clear" onClick={() => setSearchQuery('')}>✕</button>
         )}
       </div>
 
-      {/* 에러 */}
-      {error && <div className="sp-error"><span>⚠ {error}</span></div>}
+      {/* 3열 랭킹 */}
+      <div className="sp-ranking-grid">
+        <RankingColumn
+          title="LEVEL 3"
+          sublabel="필수 + 보조 + 세부"
+          color={LEVEL_CONFIG[3].color}
+          bg={LEVEL_CONFIG[3].bg}
+          border={LEVEL_CONFIG[3].border}
+          stocks={level3}
+          searchQuery={searchQuery}
+          selectedCode={selectedCode}
+          onStockSelect={onStockSelect}
+          maxRows={10}
+        />
+        <RankingColumn
+          title="LEVEL 2"
+          sublabel="필수 + 보조"
+          color={LEVEL_CONFIG[2].color}
+          bg={LEVEL_CONFIG[2].bg}
+          border={LEVEL_CONFIG[2].border}
+          stocks={level2}
+          searchQuery={searchQuery}
+          selectedCode={selectedCode}
+          onStockSelect={onStockSelect}
+          maxRows={10}
+        />
+        <RankingColumn
+          title={shortTermKey ?? '초단기'}
+          sublabel="단기 조건 통과"
+          color={SHORT_COLOR}
+          bg={SHORT_BG}
+          border={SHORT_BORDER}
+          stocks={shortTermStocks}
+          searchQuery={searchQuery}
+          selectedCode={selectedCode}
+          onStockSelect={onStockSelect}
+          maxRows={10}
+          showConditions
+        />
+      </div>
 
-      {/* 로딩 */}
-      {isLoading && !error && (
-        <div className="sp-connecting">
-          <div className="sp-connecting-dots"><span /><span /><span /></div>
-          <p>Firestore에서 데이터 로드 중...</p>
-        </div>
-      )}
-
-      {/* 데이터 없음 */}
-      {!isLoading && !error && !hasAnyData && (
-        <div className="sp-empty">
-          <p>스크리닝 데이터가 없습니다.</p>
-          <p className="sp-empty-hint">서버 스크리닝 실행 후 자동으로 표시됩니다.</p>
-        </div>
-      )}
-
-      {/* 레벨별 + 기타 그룹 섹션 */}
-      {!isLoading && hasAnyData && (
-        <div className="sp-content">
-          {levels.map((level) => (
-            <LevelSection
-              key={level}
-              level={level}
-              stocks={byLevel[level] ?? []}
-              searchQuery={searchQuery}
-              selectedCode={selectedCode}
-              onStockSelect={onStockSelect}
-            />
-          ))}
-          {groupNames.map((groupName) => (
-            <GroupSection
-              key={groupName}
-              groupName={groupName}
-              stocks={otherGroups[groupName] ?? []}
-              searchQuery={searchQuery}
-              selectedCode={selectedCode}
-              onStockSelect={onStockSelect}
-            />
-          ))}
-          {searchQuery && searchResultCount === 0 && (
-            <div className="sp-empty">
-              <p>"{searchQuery}"에 해당하는 종목이 없습니다.</p>
-            </div>
-          )}
+      {/* 검색 결과가 있을 때 하단에 추가 목록 (선택) */}
+      {searchQuery && (
+        <div className="sp-search-result-hint">
+          전체 검색 결과 표시 중
         </div>
       )}
     </section>

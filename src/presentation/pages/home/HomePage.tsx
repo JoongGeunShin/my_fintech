@@ -1,7 +1,9 @@
+// src/presentation/pages/home/HomePage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Canvas from '../../components/Canvas/Canvas';
 import RealtimePanel from '../../components/RealtimePanel/RealtimePanel';
 import ScreeningPanel from '../../components/ScreeningPanel/ScreeningPanel';
+import StockChart from '../../components/StockChart/StockChart';
 import { useActivity } from '../../hooks/useActivity';
 import { useKonvaCanvas } from '../../hooks/useKonvaCanvas';
 import { useRealtimeOrderBook, useRealtimeTrade } from '../../hooks/useRealtimeStock';
@@ -16,13 +18,13 @@ export default function HomePage() {
 
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState<string | undefined>(undefined);
+  const [chartVisible, setChartVisible] = useState(false);
 
   const { orderBook, isConnected: obConnected } = useRealtimeOrderBook(selectedCode);
   const { latestTrade, trades, isConnected: trConnected } = useRealtimeTrade(selectedCode, 50);
 
   const isConnected = obConnected || trConnected;
 
-  // 캔버스 컨테이너의 실제 너비를 측정
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(window.innerWidth - 40);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
@@ -30,16 +32,13 @@ export default function HomePage() {
   useEffect(() => {
     const wrapper = canvasWrapperRef.current;
     if (!wrapper) return;
-
     const ro = new ResizeObserver((entries) => {
       const { width } = entries[0].contentRect;
       setCanvasWidth(Math.max(300, width - 40));
     });
     ro.observe(wrapper);
-
     const handleResize = () => setWindowHeight(window.innerHeight);
     window.addEventListener('resize', handleResize);
-
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', handleResize);
@@ -48,72 +47,96 @@ export default function HomePage() {
 
   const canvasDimensions = useMemo(() => ({
     width: canvasWidth,
-    height: Math.max(300, windowHeight - 350),
+    height: Math.max(200, windowHeight - 420),
   }), [canvasWidth, windowHeight]);
 
   const handleStockSelect = useCallback((code: string, name: string) => {
-    setSelectedCode((prev) => prev === code ? null : code);
+    setSelectedCode((prev) => {
+      const next = prev === code ? null : code;
+      setChartVisible(next !== null);
+      return next;
+    });
     setSelectedName((prev) => prev === name ? undefined : name);
   }, []);
 
+  // 초단기 그룹 추출 (otherGroups 중 "초단기" 포함 키 우선)
+  // const shortTermKey = Object.keys(otherGroups).find((k) =>
+  //   k.includes('초단기') || k.includes('단기') || k.includes('short')
+  // ) ?? Object.keys(otherGroups)[0];
+  // const shortTermStocks = shortTermKey ? (otherGroups[shortTermKey] ?? []) : [];
+
   return (
-    <div className="canvas-container">
-      {/* 상단 상태 바 */}
-      <div className="realtime-status">
-        <div className="user-badge">
-          <span className="dot pulse" />
-          나의 활동량: <strong>{typeCount}</strong>
+    <div className="home-root">
+
+      {/* ── 상단 캔버스 섹션 ─────────────────────────────────── */}
+      <div className="home-canvas-section">
+        <div className="home-canvas-header">
+          <div className="home-canvas-title">
+            <span className="dot pulse" />
+            Collab Canvas
+          </div>
+          <div className="home-canvas-meta">
+            <span>활동량: <strong>{typeCount}</strong></span>
+            <button className="home-clear-btn" onClick={clearCanvas}>캔버스 초기화</button>
+          </div>
         </div>
-        <h1>Collab Canvas</h1>
-        <p>Excalidraw 스타일의 손맛을 느껴보세요!</p>
+        <div className="main-canvas-wrapper" ref={canvasWrapperRef}>
+          <Canvas
+            lines={lines}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            width={canvasDimensions.width}
+            height={canvasDimensions.height}
+          />
+        </div>
       </div>
 
-      {/* 캔버스 */}
-      <div className="main-canvas-wrapper" ref={canvasWrapperRef}>
-        <Canvas
-          lines={lines}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          width={canvasDimensions.width}
-          height={canvasDimensions.height}
-        />
-      </div>
+      {/* ── 메인 패널 영역 ────────────────────────────────────── */}
+      <div className="home-main">
 
-      {/* 하단 컨트롤 바 */}
-      <section className="canvas-controls">
-        <div id="docs">
-          <h2>Brush Tools</h2>
-          <button className="counter" onClick={clearCanvas}>Clear Canvas</button>
+        {/* ── 좌측: 스크리닝 랭킹 패널 (네이버페이 스타일) ───── */}
+        <div className="home-screening-col">
+          <ScreeningPanel
+            byLevel={byLevel}
+            topStocks={topStocks}
+            otherGroups={otherGroups}
+            isLoading={isLoading}
+            error={error}
+            selectedCode={selectedCode}
+            onStockSelect={handleStockSelect}
+          />
         </div>
-        <div id="social">
-          <h2>Active Users (3)</h2>
-          <ul className="user-list">
-            <li><span className="user-dot" style={{ background: '#646cff' }} /> 나 (그리는 중...)</li>
-            <li><span className="user-dot" style={{ background: '#ff4646' }} /> 참여자 A (타이핑: {typeCount + 5})</li>
-          </ul>
-        </div>
-      </section>
 
-      {/* 하단 패널: 스크리닝(좌) + 실시간(우) */}
-      <div className="bottom-panels">
-        <ScreeningPanel
-          byLevel={byLevel}
-          topStocks={topStocks}
-          otherGroups={otherGroups}
-          isLoading={isLoading}
-          error={error}
-          selectedCode={selectedCode}
-          onStockSelect={handleStockSelect}
-        />
-        <RealtimePanel
-          code={selectedCode}
-          name={selectedName}
-          orderBook={orderBook}
-          trades={trades}
-          latestTrade={latestTrade}
-          isConnected={isConnected}
-        />
+        {/* ── 우측: 차트 + 호가/시세 ─────────────────────────── */}
+        <div className={`home-chart-col ${chartVisible ? 'visible' : ''}`}>
+          {!selectedCode ? (
+            <div className="home-chart-empty">
+              <span className="home-chart-empty-arrow">←</span>
+              <p>좌측에서 종목을 선택하면</p>
+              <p>차트와 실시간 호가가 표시됩니다</p>
+            </div>
+          ) : (
+            <>
+              {/* 차트 */}
+              <div className="home-chart-wrap">
+                <StockChart code={selectedCode} name={selectedName} />
+              </div>
+
+              {/* 호가 + 시세 */}
+              <div className="home-realtime-wrap">
+                <RealtimePanel
+                  code={selectedCode}
+                  name={selectedName}
+                  orderBook={orderBook}
+                  trades={trades}
+                  latestTrade={latestTrade}
+                  isConnected={isConnected}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

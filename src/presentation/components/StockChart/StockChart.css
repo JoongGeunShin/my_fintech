@@ -1,0 +1,185 @@
+/* src/presentation/components/StockChart/StockChart.css */
+
+.sc-root {
+  display: flex;
+  flex-direction: column;
+  background: #131722;
+  border-radius: 0;
+  overflow: hidden;
+  height: 100%;
+  min-height: 400px;
+  font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
+}
+
+/* ── 툴바 ─────────────────────────────────────────── */
+.sc-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #1a1f2e;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sc-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sc-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: -0.02em;
+}
+
+.sc-code {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-ohlc {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-ohlc .sc-up { color: #ef4444; font-weight: 700; }
+.sc-ohlc .sc-dn { color: #3b82f6; font-weight: 700; }
+.sc-ohlc .sc-vol-label { color: rgba(255,255,255,0.4); }
+
+.sc-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sc-period-btn,
+.sc-ma-btn,
+.sc-refresh {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.45);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.sc-period-btn:hover,
+.sc-ma-btn:hover,
+.sc-refresh:hover {
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.75);
+  border-color: rgba(255,255,255,0.25);
+}
+
+.sc-period-btn.active {
+  background: rgba(99,102,241,0.2);
+  border-color: rgba(99,102,241,0.6);
+  color: #a5b4fc;
+}
+
+.sc-ma-btn.active {
+  background: rgba(245,158,11,0.15);
+  border-color: rgba(245,158,11,0.5);
+  color: #f59e0b;
+}
+
+.sc-refresh {
+  font-size: 14px;
+  padding: 2px 8px;
+}
+
+/* ── 차트 영역 ───────────────────────────────────── */
+.sc-chart-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.sc-canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.sc-canvas,
+.sc-cross-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sc-cross-canvas {
+  z-index: 2;
+  cursor: crosshair;
+  background: transparent;
+}
+
+/* ── 거래량 ──────────────────────────────────────── */
+.sc-vol-area {
+  position: relative;
+  height: 60px;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.sc-vol-title {
+  position: absolute;
+  top: 3px;
+  left: 10px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.sc-vol-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── 로딩/에러 오버레이 ──────────────────────────── */
+.sc-loading,
+.sc-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  z-index: 5;
+  background: rgba(19,23,34,0.8);
+  backdrop-filter: blur(2px);
+}
+
+.sc-loading { color: rgba(255,255,255,0.5); }
+.sc-error   { color: #ef4444; }
+
+/* ── 힌트 ────────────────────────────────────────── */
+.sc-hint {
+  font-size: 10px;
+  color: rgba(255,255,255,0.2);
+  text-align: center;
+  padding: 4px;
+  background: #131722;
+  flex-shrink: 0;
+  margin: 0;
+}

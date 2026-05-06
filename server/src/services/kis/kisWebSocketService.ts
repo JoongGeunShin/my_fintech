@@ -1,9 +1,10 @@
+// server/src/services/kis/kisWebSocketService.ts
 import WebSocket from 'ws';
 import { getWebSocketApprovalKey } from './tokenService.js';
 
 // ── KIS 실시간 데이터 타입 ───────────────────────────────────
 
-/** 실시간 호가 (TR: H0STASP0) */
+/** 실시간 호가 (TR: H0STASP0 / 시간외: H0STBSP0) */
 export interface RealtimeOrderBook {
   code: string;              // 종목코드
   timestamp: string;         // 영업시각 (HHmmss)
@@ -15,9 +16,10 @@ export interface RealtimeOrderBook {
   bidVolumes: number[];      // 매수호가 잔량 1~10
   askLevelPrices: number[];  // 예상 매도호가
   bidLevelPrices: number[];  // 예상 매수호가
+  isAfterHours?: boolean;    // 시간외 여부
 }
 
-/** 실시간 체결가 (TR: H0STCNT0) */
+/** 실시간 체결가 (TR: H0STCNT0 / 시간외: H0STBCNT) */
 export interface RealtimeTrade {
   code: string;              // 종목코드
   timestamp: string;         // 체결시각 (HHmmss)
@@ -35,12 +37,17 @@ export interface RealtimeTrade {
   bidReqCount: number;       // 매수 체결건수
   askReqCount: number;       // 매도 체결건수
   netBidVolume: number;      // 순매수 체결량
+  isAfterHours?: boolean;    // 시간외 여부
 }
 
 // ── 구독 TR ID 상수 ──────────────────────────────────────────
 const TR_ID = {
-  ORDER_BOOK: 'H0STASP0',  // 국내주식 실시간 호가
-  TRADE:      'H0STCNT0',  // 국내주식 실시간 체결가
+  // 장중 (09:00 ~ 15:30)
+  ORDER_BOOK:            'H0STASP0',  // 국내주식 실시간 호가
+  TRADE:                 'H0STCNT0',  // 국내주식 실시간 체결가
+  // 시간외 (장전 08:00~09:00 / 장후 15:40~18:00)
+  ORDER_BOOK_AFTER:      'H0STBSP0',  // 국내주식 시간외 실시간 호가
+  TRADE_AFTER:           'H0STBCNT',  // 국내주식 시간외 실시간 체결가
 } as const;
 
 type TrId = typeof TR_ID[keyof typeof TR_ID];
@@ -61,10 +68,13 @@ class KisWebSocketService {
   private isShuttingDown = false;
 
   // 구독 중인 종목 추적 (재연결 시 재구독)
-  private orderBookSubs = new Set<string>();
-  private tradeSubs     = new Set<string>();
+  // 장중 / 시간외 각각 별도 Set 으로 관리
+  private orderBookSubs      = new Set<string>();
+  private tradeSubs          = new Set<string>();
+  private orderBookAfterSubs = new Set<string>();
+  private tradeAfterSubs     = new Set<string>();
 
-  // 콜백 레지스트리
+  // 콜백 레지스트리 (장중 + 시간외 동일 콜백 공유)
   private orderBookCallbacks = new Map<string, Set<OrderBookCallback>>();
   private tradeCallbacks     = new Map<string, Set<TradeCallback>>();
 
@@ -114,12 +124,20 @@ class KisWebSocketService {
   }
 
   // ── 구독 / 해제 ───────────────────────────────────────────
+  // 장중 + 시간외 TR을 동시에 구독하여 어느 시간대든 데이터 수신
 
   subscribeOrderBook(code: string, cb: OrderBookCallback): void {
     this._addCallback(this.orderBookCallbacks, code, cb);
+
+    // 장중 호가 구독
     if (!this.orderBookSubs.has(code)) {
       this.orderBookSubs.add(code);
       this._sendSubscribe(TR_ID.ORDER_BOOK, code);
+    }
+    // 시간외 호가 구독
+    if (!this.orderBookAfterSubs.has(code)) {
+      this.orderBookAfterSubs.add(code);
+      this._sendSubscribe(TR_ID.ORDER_BOOK_AFTER, code);
     }
   }
 
@@ -128,14 +146,23 @@ class KisWebSocketService {
     if (!this.orderBookCallbacks.has(code)) {
       this.orderBookSubs.delete(code);
       this._sendUnsubscribe(TR_ID.ORDER_BOOK, code);
+      this.orderBookAfterSubs.delete(code);
+      this._sendUnsubscribe(TR_ID.ORDER_BOOK_AFTER, code);
     }
   }
 
   subscribeTrade(code: string, cb: TradeCallback): void {
     this._addCallback(this.tradeCallbacks, code, cb);
+
+    // 장중 체결 구독
     if (!this.tradeSubs.has(code)) {
       this.tradeSubs.add(code);
       this._sendSubscribe(TR_ID.TRADE, code);
+    }
+    // 시간외 체결 구독
+    if (!this.tradeAfterSubs.has(code)) {
+      this.tradeAfterSubs.add(code);
+      this._sendSubscribe(TR_ID.TRADE_AFTER, code);
     }
   }
 
@@ -144,6 +171,8 @@ class KisWebSocketService {
     if (!this.tradeCallbacks.has(code)) {
       this.tradeSubs.delete(code);
       this._sendUnsubscribe(TR_ID.TRADE, code);
+      this.tradeAfterSubs.delete(code);
+      this._sendUnsubscribe(TR_ID.TRADE_AFTER, code);
     }
   }
 
@@ -179,7 +208,7 @@ class KisWebSocketService {
 
   private _send(trType: '1' | '2', trId: TrId, code: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn(`[KIS-WS] 미연결 상태 - ${trType === '1' ? '구독' : '해제'} 대기 (${code})`);
+      console.warn(`[KIS-WS] 미연결 상태 - ${trType === '1' ? '구독' : '해제'} 대기 (${trId}/${code})`);
       return;
     }
     const payload = {
@@ -201,8 +230,12 @@ class KisWebSocketService {
   }
 
   private _resubscribeAll(): void {
-    for (const code of this.orderBookSubs) this._sendSubscribe(TR_ID.ORDER_BOOK, code);
-    for (const code of this.tradeSubs)     this._sendSubscribe(TR_ID.TRADE, code);
+    // 장중
+    for (const code of this.orderBookSubs)      this._sendSubscribe(TR_ID.ORDER_BOOK,       code);
+    for (const code of this.tradeSubs)           this._sendSubscribe(TR_ID.TRADE,            code);
+    // 시간외
+    for (const code of this.orderBookAfterSubs)  this._sendSubscribe(TR_ID.ORDER_BOOK_AFTER, code);
+    for (const code of this.tradeAfterSubs)      this._sendSubscribe(TR_ID.TRADE_AFTER,      code);
   }
 
   private _scheduleReconnect(): void {
@@ -264,15 +297,33 @@ class KisWebSocketService {
     const trId = parts[1];
     const body = parts[3];
 
-    // 디버그: 모든 파이프 메시지
-    console.log(`[KIS-WS] PIPE parts=${parts.length} [0]=${parts[0]} [1]=${trId} [2]=${parts[2]} body_head=${body?.slice(0, 40)}`);
+    console.log(`[KIS-WS] PIPE trId=${trId} body_head=${body?.slice(0, 40)}`);
 
-    if (trId === TR_ID.ORDER_BOOK) {
-      const parsed = this._parseOrderBook(body);
-      if (parsed) this._emitOrderBook(parsed);
-    } else if (trId === TR_ID.TRADE) {
-      const parsed = this._parseTrade(body);
-      if (parsed) this._emitTrade(parsed);
+    switch (trId) {
+      // ── 장중 호가 ──────────────────────────────────────────
+      case TR_ID.ORDER_BOOK: {
+        const parsed = this._parseOrderBook(body, false);
+        if (parsed) this._emitOrderBook(parsed);
+        break;
+      }
+      // ── 시간외 호가 ────────────────────────────────────────
+      case TR_ID.ORDER_BOOK_AFTER: {
+        const parsed = this._parseOrderBookAfter(body);
+        if (parsed) this._emitOrderBook(parsed);
+        break;
+      }
+      // ── 장중 체결 ──────────────────────────────────────────
+      case TR_ID.TRADE: {
+        const parsed = this._parseTrade(body, false);
+        if (parsed) this._emitTrade(parsed);
+        break;
+      }
+      // ── 시간외 체결 ────────────────────────────────────────
+      case TR_ID.TRADE_AFTER: {
+        const parsed = this._parseTradeAfter(body);
+        if (parsed) this._emitTrade(parsed);
+        break;
+      }
     }
   }
 
@@ -292,26 +343,22 @@ class KisWebSocketService {
     }
   }
 
-  // ── 파서: 실시간 호가 (H0STASP0) ─────────────────────────
+  // ── 파서: 장중 실시간 호가 (H0STASP0) ────────────────────
   // 전문 구성 (^ 구분자, 총 54필드)
-  private _parseOrderBook(body: string): RealtimeOrderBook | null {
+  private _parseOrderBook(body: string, isAfterHours: boolean): RealtimeOrderBook | null {
     try {
       const f = body.split('^');
-      if (f.length < 54) return null;
+      if (f.length < 45) return null;
 
       const toNum = (v: string) => parseFloat(v) || 0;
       const toInt = (v: string) => parseInt(v, 10) || 0;
 
-      // f[0]: 유가증권단축종목코드
-      // f[1]: 영업시각
-      // f[2]: 임의처리구분코드
+      // f[0]: 종목코드, f[1]: 영업시각
       // f[3]~f[12]:  매도호가 1~10
       // f[13]~f[22]: 매수호가 1~10
       // f[23]~f[32]: 매도호가 잔량 1~10
       // f[33]~f[42]: 매수호가 잔량 1~10
-      // f[43]: 총 매도호가 잔량
-      // f[44]: 총 매수호가 잔량
-      // f[45]~f[54]: 예상 체결가 등 (필요 시 확장)
+      // f[43]: 총 매도호가 잔량, f[44]: 총 매수호가 잔량
 
       const askPrices:   number[] = [];
       const bidPrices:   number[] = [];
@@ -326,8 +373,6 @@ class KisWebSocketService {
         askVolumes.push(toInt(f[23 + i]));
         bidVolumes.push(toInt(f[33 + i]));
       }
-
-      // 예상 매도/매수 (f[45]~ 구조에 따라 조정 필요)
       for (let i = 0; i < 5 && 45 + i < f.length; i++) {
         askLevelPrices.push(toNum(f[45 + i]));
       }
@@ -346,6 +391,7 @@ class KisWebSocketService {
         bidVolumes,
         askLevelPrices,
         bidLevelPrices,
+        isAfterHours,
       };
     } catch (err) {
       console.error('[KIS-WS] 호가 파싱 오류:', err);
@@ -353,9 +399,57 @@ class KisWebSocketService {
     }
   }
 
-  // ── 파서: 실시간 체결가 (H0STCNT0) ──────────────────────
-  // 전문 구성 (^ 구분자, 총 46필드)
-  private _parseTrade(body: string): RealtimeTrade | null {
+  // ── 파서: 시간외 실시간 호가 (H0STBSP0) ──────────────────
+  // KIS 시간외 호가 전문은 장중과 동일한 ^ 구분 포맷
+  // 필드 수가 적을 수 있으므로 최소 필드 수를 완화
+  private _parseOrderBookAfter(body: string): RealtimeOrderBook | null {
+    try {
+      const f = body.split('^');
+      if (f.length < 45) {
+        // 필드 수 부족 시 가능한 범위만 파싱
+        console.warn(`[KIS-WS] 시간외 호가 필드 수 부족: ${f.length}`);
+        if (f.length < 5) return null;
+      }
+
+      const toNum = (v: string | undefined) => parseFloat(v ?? '0') || 0;
+      const toInt = (v: string | undefined) => parseInt(v ?? '0', 10) || 0;
+
+      const askPrices:   number[] = [];
+      const bidPrices:   number[] = [];
+      const askVolumes:  number[] = [];
+      const bidVolumes:  number[] = [];
+
+      // 시간외 호가는 최대 5단계만 제공하는 경우도 있음
+      const levels = Math.min(10, Math.floor((f.length - 3) / 4));
+      for (let i = 0; i < levels; i++) {
+        askPrices.push(toNum(f[3 + i]));
+        bidPrices.push(toNum(f[3 + levels + i]));
+        askVolumes.push(toInt(f[3 + levels * 2 + i]));
+        bidVolumes.push(toInt(f[3 + levels * 3 + i]));
+      }
+
+      const totalIdx = 3 + levels * 4;
+      return {
+        code: f[0],
+        timestamp: f[1],
+        totalAskVolume: toInt(f[totalIdx]),
+        totalBidVolume: toInt(f[totalIdx + 1] ?? '0'),
+        askPrices,
+        askVolumes,
+        bidPrices,
+        bidVolumes,
+        askLevelPrices: [],
+        bidLevelPrices: [],
+        isAfterHours: true,
+      };
+    } catch (err) {
+      console.error('[KIS-WS] 시간외 호가 파싱 오류:', err);
+      return null;
+    }
+  }
+
+  // ── 파서: 장중 실시간 체결가 (H0STCNT0) ─────────────────
+  private _parseTrade(body: string, isAfterHours: boolean): RealtimeTrade | null {
     try {
       const f = body.split('^');
       if (f.length < 30) return null;
@@ -363,57 +457,78 @@ class KisWebSocketService {
       const toNum = (v: string) => parseFloat(v) || 0;
       const toInt = (v: string) => parseInt(v, 10) || 0;
 
-      // f[0]:  유가증권단축종목코드
-      // f[1]:  주식 체결 시간
-      // f[2]:  주식 현재가 (체결가)
+      // f[0]:  종목코드
+      // f[1]:  체결시간
+      // f[2]:  체결가
       // f[3]:  전일 대비 부호
       // f[4]:  전일 대비
       // f[5]:  전일 대비율
-      // f[6]:  가중 평균 주식 가격
-      // f[7]:  주식 시가
-      // f[8]:  주식 최고가
-      // f[9]:  주식 최저가
-      // f[10]: 매도호가1
-      // f[11]: 매수호가1
+      // f[7]:  시가, f[8]: 고가, f[9]: 저가
       // f[12]: 체결 거래량
       // f[13]: 누적 거래량
       // f[14]: 누적 거래 대금
-      // f[15]: 매도체결건수
-      // f[16]: 매수체결건수
-      // f[17]: 순매수체결량 (매수-매도)
-      // f[18]: 체결강도
-      // f[19]: 총 매도 수량
-      // f[20]: 총 매수 수량
-      // f[21]: 체결구분 (매수/매도)
-      // f[22]: 매수비율
-      // f[23]: 전일 거래량 대비 등락률
-      // f[24]: 시간구분코드
-      // f[25]: 임의종료구분코드
-      // f[26]: 장운영구분코드
-      // f[27]: 전일동시간누적거래량
-      // f[28]: 전일동시간누적거래량비율
-      // f[29]: 이론 가격 (ELW 등)
+      // f[15]: 매도체결건수, f[16]: 매수체결건수
+      // f[17]: 순매수체결량
 
       return {
-        code:        f[0],
-        timestamp:   f[1],
-        tradePrice:  toNum(f[2]),
-        changeSign:  f[3],
-        changePrice: toNum(f[4]),
-        changeRate:  toNum(f[5]),
-        openPrice:   toNum(f[7]),
-        highPrice:   toNum(f[8]),
-        lowPrice:    toNum(f[9]),
-        tradeVolume: toInt(f[12]),
-        accVolume:   toInt(f[13]),
-        accAmount:   toNum(f[14]),
-        askReqCount: toInt(f[15]),
-        bidReqCount: toInt(f[16]),
+        code:         f[0],
+        timestamp:    f[1],
+        tradePrice:   toNum(f[2]),
+        changeSign:   f[3],
+        changePrice:  toNum(f[4]),
+        changeRate:   toNum(f[5]),
+        openPrice:    toNum(f[7]),
+        highPrice:    toNum(f[8]),
+        lowPrice:     toNum(f[9]),
+        tradeVolume:  toInt(f[12]),
+        accVolume:    toInt(f[13]),
+        accAmount:    toNum(f[14]),
+        askReqCount:  toInt(f[15]),
+        bidReqCount:  toInt(f[16]),
         netBidVolume: toInt(f[17]),
-        tradeAmount:  toNum(f[2]) * toInt(f[12]), // 체결가 × 체결량
+        tradeAmount:  toNum(f[2]) * toInt(f[12]),
+        isAfterHours,
       };
     } catch (err) {
       console.error('[KIS-WS] 체결 파싱 오류:', err);
+      return null;
+    }
+  }
+
+  // ── 파서: 시간외 실시간 체결가 (H0STBCNT) ───────────────
+  // 시간외 체결 전문은 장중보다 필드가 적음 (약 20개)
+  // f[0]: 종목코드, f[1]: 체결시간, f[2]: 체결가, f[3]: 전일대비부호
+  // f[4]: 전일대비, f[5]: 전일대비율, f[6]: 체결거래량, f[7]: 누적거래량
+  // f[8]: 누적거래대금
+  private _parseTradeAfter(body: string): RealtimeTrade | null {
+    try {
+      const f = body.split('^');
+      if (f.length < 6) return null;
+
+      const toNum = (v: string | undefined) => parseFloat(v ?? '0') || 0;
+      const toInt = (v: string | undefined) => parseInt(v ?? '0', 10) || 0;
+
+      return {
+        code:         f[0],
+        timestamp:    f[1],
+        tradePrice:   toNum(f[2]),
+        changeSign:   f[3] ?? '3',
+        changePrice:  toNum(f[4]),
+        changeRate:   toNum(f[5]),
+        tradeVolume:  toInt(f[6]),
+        accVolume:    toInt(f[7]),
+        accAmount:    toNum(f[8]),
+        openPrice:    0,
+        highPrice:    0,
+        lowPrice:     0,
+        askReqCount:  0,
+        bidReqCount:  0,
+        netBidVolume: 0,
+        tradeAmount:  toNum(f[2]) * toInt(f[6]),
+        isAfterHours: true,
+      };
+    } catch (err) {
+      console.error('[KIS-WS] 시간외 체결 파싱 오류:', err);
       return null;
     }
   }
