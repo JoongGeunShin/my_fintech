@@ -1,3 +1,4 @@
+// server/src/index.ts
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
@@ -24,8 +25,14 @@ const PORT = process.env.PORT ?? 3001;
 app.use(express.json());
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+    // 개발 환경에서 Vite(5173)와 직접 소켓 연결 모두 허용
+    origin: [
+      process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+      'http://localhost:5173',
+      'http://localhost:3000',
+    ],
     methods: ['GET', 'POST'],
+    credentials: true,
   })
 );
 
@@ -33,13 +40,17 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/item/stocks', stocksRouter);
-app.use('/item/stocks/investor', stockInvestorRouter);
-app.use('/item/stocks/period', stockPeriodRouter);
-app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter);
-app.use('/optional/search-list', optionalSearchListRouter);
+// ✅ 핵심: 구체적인(긴) 경로를 반드시 먼저 등록해야 함
+// Express는 위→아래 순서로 매칭하므로
+// '/item/stocks' 가 먼저 오면 하위 경로를 전부 가로챔
+app.use('/item/stocks/period/specified', stockPeriodSpecifiedRouter); // 가장 구체적
+app.use('/item/stocks/period',           stockPeriodRouter);
+app.use('/item/stocks/investor',         stockInvestorRouter);
+app.use('/item/stocks',                  stocksRouter);               // 가장 일반적
+
 app.use('/optional/search-list/sequence', optionalSearchItemRouter);
-app.use('/optional/screening', screeningResultsRouter);
+app.use('/optional/search-list',          optionalSearchListRouter);
+app.use('/optional/screening',            screeningResultsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({
@@ -55,17 +66,18 @@ httpServer.listen(PORT, () => {
   console.log(`WebSocket:   ws://localhost:${PORT}`);
   console.log(`서버 상태: http://localhost:${PORT}/health`);
   console.log('\n< 단순 조회 >');
-  console.log(`  주식 조회: http://localhost:${PORT}/item/stocks/?code=005930`);
-  console.log(`  기간별: http://localhost:${PORT}/item/stocks/period?code=005930&period=D`);
+  console.log(`  주식 조회:    http://localhost:${PORT}/item/stocks/?code=005930`);
+  console.log(`  기간별:       http://localhost:${PORT}/item/stocks/period?code=005930&period=D`);
   console.log(`  기간별(상세): http://localhost:${PORT}/item/stocks/period/specified?code=005930&startDate=20200101&endDate=20201231`);
-  console.log(`  투자자별: http://localhost:${PORT}/item/stocks/investor?code=005930`);
+  console.log(`  투자자별:     http://localhost:${PORT}/item/stocks/investor?code=005930`);
   console.log('\n< 조건 검색 >');
-  console.log(`  조건 리스트: http://localhost:${PORT}/optional/search-list`);
-  console.log(`  조건 항목: http://localhost:${PORT}/optional/search-list/sequence?sequence=0`);
+  console.log(`  조건 리스트:  http://localhost:${PORT}/optional/search-list`);
+  console.log(`  조건 항목:    http://localhost:${PORT}/optional/search-list/sequence?sequence=0`);
   console.log('\n< 스크리닝 >');
-  console.log(`  최신 결과: http://localhost:${PORT}/optional/screening`);
-  console.log(`  수동 실행: POST http://localhost:${PORT}/optional/screening/run`);
-  console.log(`  레벨별: http://localhost:${PORT}/optional/screening/level/2`);
+  console.log(`  최신 결과:    http://localhost:${PORT}/optional/screening`);
+  console.log(`  수동 실행:    POST http://localhost:${PORT}/optional/screening/run`);
+  console.log(`  레벨별:       http://localhost:${PORT}/optional/screening/level/2`);
+
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
     'KIS_API_APP_SECRET_KEY',
@@ -78,7 +90,7 @@ httpServer.listen(PORT, () => {
   if (missing.length > 0) {
     console.warn('\n⚠️  누락된 환경변수:', missing.join(', '));
   } else {
-    console.log('✅ 환경변수 로드 완료');
+    console.log('\n✅ 환경변수 로드 완료');
   }
 
   initSocketServer(httpServer);

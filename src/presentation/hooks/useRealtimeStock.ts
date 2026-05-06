@@ -1,3 +1,4 @@
+// src/presentation/hooks/useRealtimeStock.ts
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
@@ -14,6 +15,7 @@ export interface RealtimeOrderBook {
   bidVolumes: number[];
   askLevelPrices: number[];
   bidLevelPrices: number[];
+  isAfterHours?: boolean;
 }
 
 export interface RealtimeTrade {
@@ -24,7 +26,7 @@ export interface RealtimeTrade {
   tradeAmount: number;
   changePrice: number;
   changeRate: number;
-  changeSign: string; // '1':상한 '2':상승 '3':보합 '4':하락 '5':하한
+  changeSign: string;
   accVolume: number;
   accAmount: number;
   highPrice: number;
@@ -33,9 +35,10 @@ export interface RealtimeTrade {
   bidReqCount: number;
   askReqCount: number;
   netBidVolume: number;
+  isAfterHours?: boolean;
 }
 
-// ── 이벤트 상수 (socketServer.ts 와 동일) ────────────────────
+// ── 이벤트 상수 ───────────────────────────────────────────────
 const EVENTS = {
   ORDERBOOK_UPDATE:      'realtime:orderbook',
   TRADE_UPDATE:          'realtime:trade',
@@ -45,7 +48,10 @@ const EVENTS = {
   UNSUBSCRIBE_TRADE:     'unsubscribe:trade',
 } as const;
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
+// ── Socket.IO 서버 URL ────────────────────────────────────────
+// Socket.IO는 Vite proxy를 거치지 않고 서버에 직접 연결
+// VITE_SERVER_URL이 없으면 PORT=3000 서버로 직접 연결
+const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3000';
 
 // ── 공유 소켓 싱글턴 ─────────────────────────────────────────
 let _sharedSocket: Socket | null = null;
@@ -53,7 +59,6 @@ let _refCount = 0;
 let _disconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function acquireSocket(): Socket {
-  // 지연 해제 예약이 있으면 취소 (StrictMode 이중 마운트 대응)
   if (_disconnectTimer) {
     clearTimeout(_disconnectTimer);
     _disconnectTimer = null;
@@ -64,7 +69,10 @@ function acquireSocket(): Socket {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1_000,
       reconnectionDelayMax: 10_000,
+      // polling 우선 → websocket 업그레이드 (Vite proxy 환경에서 안정적)
+      transports: ['polling', 'websocket'],
     });
+    console.log('[Socket] 새 소켓 생성:', SERVER_URL);
   }
   _refCount++;
   return _sharedSocket;
@@ -73,11 +81,11 @@ function acquireSocket(): Socket {
 function releaseSocket(): void {
   _refCount = Math.max(0, _refCount - 1);
   if (_refCount === 0) {
-    // StrictMode 의 cleanup → 즉시 재마운트 패턴을 허용하기 위해 지연 해제
     _disconnectTimer = setTimeout(() => {
       if (_refCount === 0 && _sharedSocket) {
         _sharedSocket.disconnect();
         _sharedSocket = null;
+        console.log('[Socket] 소켓 해제');
       }
       _disconnectTimer = null;
     }, 150);
@@ -93,7 +101,6 @@ export function useRealtimeOrderBook(code: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef  = useRef<Socket | null>(null);
   const activeCode = useRef<string | null>(null);
-  // 항상 최신 code 를 onConnect 에서 참조하기 위한 ref
   const codeRef    = useRef<string | null>(code);
   codeRef.current  = code;
 
@@ -112,7 +119,6 @@ export function useRealtimeOrderBook(code: string | null) {
     const socket = acquireSocket();
     socketRef.current = socket;
 
-    // codeRef 를 참조해 재연결 시에도 현재 code 로 구독
     const onConnect = () => {
       setIsConnected(true);
       if (codeRef.current) subscribe(socket, codeRef.current);
@@ -126,7 +132,6 @@ export function useRealtimeOrderBook(code: string | null) {
     socket.on('disconnect',            onDisconnect);
     socket.on(EVENTS.ORDERBOOK_UPDATE, onData);
 
-    // 이미 연결 중이면 즉시 구독
     if (socket.connected && codeRef.current) {
       setIsConnected(true);
       subscribe(socket, codeRef.current);
@@ -142,16 +147,13 @@ export function useRealtimeOrderBook(code: string | null) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // code 변경 시 구독 전환
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket) return;
-
     if (activeCode.current && activeCode.current !== code) {
       unsubscribe(socket, activeCode.current);
       setOrderBook(null);
     }
-    // 소켓이 연결된 경우만 여기서 구독; 미연결이면 onConnect 가 처리
     if (code && socket.connected) {
       subscribe(socket, code);
     }
@@ -221,7 +223,6 @@ export function useRealtimeTrade(code: string | null, maxHistory = 60) {
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket) return;
-
     if (activeCode.current && activeCode.current !== code) {
       unsubscribe(socket, activeCode.current);
       setLatestTrade(null);
