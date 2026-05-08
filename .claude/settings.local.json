@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(find src/services/strategy src/repositories/virtualPortfolioRepository.ts src/types/strategy src/routes/trading.ts -type f)",
+      "Bash(dir /s /b src\\\\services\\\\strategy src\\\\types\\\\strategy src\\\\repositories\\\\virtualPortfolioRepository.ts src\\\\routes\\\\trading.ts)",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\React\\\\projects\\\\my_fintech\" -Recurse -Depth 3 | Where-Object { $_.Name -ne \"server\" -and $_.Name -ne \"node_modules\" -and $_.FullName -notmatch \"\\\\.next|\\\\.git|dist|build\" } | Select-Object FullName | Sort-Object FullName)",
+      "Bash(dir \"E:\\\\React\\\\projects\\\\my_fintech\\\\src\" /s /b)"
+    ]
+  }
+}
