@@ -19,7 +19,6 @@ interface StockChartProps {
   name?: string;
 }
 
-// Vite proxy 덕분에 상대경로 사용 가능 → CORS 문제 없음
 const COLOR = {
   UP:        '#ef4444',
   DOWN:      '#3b82f6',
@@ -28,7 +27,7 @@ const COLOR = {
   GRID:      'rgba(255,255,255,0.06)',
   AXIS:      'rgba(255,255,255,0.35)',
   BG:        '#131722',
-  CROSS:     'rgba(255,255,255,0.45)',
+  CROSS:     'rgba(255,255,255,0.6)',
   MA1:       '#f59e0b',
   MA2:       '#a855f7',
   MA3:       '#22d3ee',
@@ -49,6 +48,28 @@ function fmtDate(d: string, period: PeriodType): string {
   return d;
 }
 
+// ── 데이터 패치: J(KRX) → UN(전체) 순서로 폴백 ───────────────
+async function fetchCandles(code: string, startDate: string, endDate: string, period: string): Promise<CandleData[]> {
+  const markets = ['J', 'UN'];  // J=KRX 먼저, 빈 배열이면 UN으로 재시도
+  
+  for (const market of markets) {
+    const url = `/item/stocks/period/specified?code=${code}&startDate=${startDate}&endDate=${endDate}&period=${period}&market=${market}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
+    }
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error?.message ?? '조회 실패');
+    
+    const prices: CandleData[] = json.data.dailyPrices ?? [];
+    if (prices.length > 0) {
+      return prices.reverse(); // 오래된 것부터
+    }
+  }
+  return [];
+}
+
 export default function StockChart({ code, name }: StockChartProps) {
   const chartRef  = useRef<HTMLCanvasElement>(null);
   const volRef    = useRef<HTMLCanvasElement>(null);
@@ -64,6 +85,11 @@ export default function StockChart({ code, name }: StockChartProps) {
   const [hovIdx, setHovIdx]       = useState<number | null>(null);
   const [showMA, setShowMA]       = useState(true);
 
+  const isDragging     = useRef(false);
+  const dragStartX     = useRef(0);
+  const dragStartView  = useRef(0);
+
+  // ── 데이터 패치 ───────────────────────────────────────────
   const fetchData = useCallback(async (c: string, p: PeriodType) => {
     setLoading(true);
     setError(null);
@@ -80,17 +106,7 @@ export default function StockChart({ code, name }: StockChartProps) {
         return fmt(d);
       })();
 
-      // 상대경로 → Vite proxy가 localhost:3001로 포워딩
-      const url = `/item/stocks/period/specified?code=${c}&startDate=${startDate}&endDate=${endDate}&period=${p}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error('HTTP '+res.status+': '+text.slice(0,120));
-      }
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message ?? '조회 실패');
-
-      const raw: CandleData[] = (json.data.dailyPrices as CandleData[]).reverse();
+      const raw = await fetchCandles(c, startDate, endDate, p);
       setCandles(raw);
       setViewStart(Math.max(0, raw.length - 80));
     } catch (e) {
@@ -102,35 +118,72 @@ export default function StockChart({ code, name }: StockChartProps) {
 
   useEffect(() => {
     if (!code) { setCandles([]); return; }
+    setCandles([]);   // 종목/기간 변경 즉시 이전 데이터 초기화
+    setViewStart(0);
     fetchData(code, period);
     const timer = setInterval(() => fetchData(code, period), 60_000);
     return () => clearInterval(timer);
   }, [code, period, fetchData]);
 
+  // ── 스크롤: crossRef(최상위 레이어)에 달아야 동작 ────────
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    if (Math.abs(e.deltaX) < 1) {
-      setCandleW((prev) => Math.max(3, Math.min(40, e.deltaY > 0 ? prev * 0.85 : prev * 1.18)));
+    e.stopPropagation();
+    // 트랙패드 좌우 스크롤 = 패닝, 상하 = 줌
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      // 좌우: 패닝
+      setViewStart((prev) => Math.max(0, prev + Math.round(e.deltaX / 10)));
     } else {
-      setViewStart((prev) => Math.max(0, prev + Math.round(e.deltaX / 20)));
+      // 상하: 줌 (위=확대, 아래=축소)
+      setCandleW((prev) => Math.max(3, Math.min(40, e.deltaY > 0 ? prev * 0.85 : prev * 1.18)));
     }
   }, []);
 
+  // crossRef에 wheel 리스너 등록 (chartRef 아님 - crossRef가 최상단 레이어)
   useEffect(() => {
-    const el = chartRef.current;
+    const el = crossRef.current;
     if (!el) return;
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    isDragging.current    = true;
+    dragStartX.current    = e.clientX;
+    dragStartView.current = viewStart;
+    setCursor(null);
+    setHovIdx(null);
+  }, [viewStart]);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isDragging.current) {
+      const delta = Math.round((dragStartX.current - e.clientX) / candleW);
+      setViewStart(Math.max(0, dragStartView.current + delta));
+      return;
+    }
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     setCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     setHovIdx(viewStart + Math.floor((e.clientX - rect.left) / candleW));
   }, [candleW, viewStart]);
 
-  const handleMouseLeave = useCallback(() => { setCursor(null); setHovIdx(null); }, []);
+  const handleMouseLeave = useCallback(() => {
+    isDragging.current = false;
+    setCursor(null);
+    setHovIdx(null);
+  }, []);
 
+  // 캔버스 밖에서 마우스를 뗐을 때도 드래그 해제
+  useEffect(() => {
+    const onUp = () => { isDragging.current = false; };
+    window.addEventListener('mouseup', onUp);
+    return () => window.removeEventListener('mouseup', onUp);
+  }, []);
+
+  // ── 캔버스 렌더링 ─────────────────────────────────────────
   useEffect(() => {
     const canvas = chartRef.current, volCvs = volRef.current, crossCvs = crossRef.current;
     if (!canvas || !volCvs || !crossCvs) return;
@@ -167,6 +220,7 @@ export default function StockChart({ code, name }: StockChartProps) {
     const priceH = CH-PAD_T-PAD_B;
     const toY = (p: number) => PAD_T + (1-(p-minP)/(maxP-minP))*priceH;
 
+    // 그리드
     for (let i=0; i<=5; i++) {
       const y = PAD_T + (priceH/5)*i;
       ctx.strokeStyle=COLOR.GRID; ctx.lineWidth=1;
@@ -175,6 +229,7 @@ export default function StockChart({ code, name }: StockChartProps) {
       ctx.fillText((maxP-((maxP-minP)/5)*i).toLocaleString('ko-KR',{maximumFractionDigits:0}), W-4, y+3);
     }
 
+    // MA 선
     if (showMA) {
       [{n:5,c:COLOR.MA1},{n:20,c:COLOR.MA2},{n:60,c:COLOR.MA3}].forEach(({n,c}) => {
         const ma = calcMA(candles, n);
@@ -183,16 +238,18 @@ export default function StockChart({ code, name }: StockChartProps) {
         slice.forEach((_,i) => {
           const v=ma[start+i]; if (v===null) return;
           const x=PAD_L+i*candleW+candleW/2;
-          if(first) 
-            ctx.moveTo(x,toY(v))
-          else 
+          if(first) {
+            ctx.moveTo(x,toY(v));
+          } else {
             ctx.lineTo(x,toY(v));
+          }
           first=false;
         });
         ctx.stroke();
       });
     }
 
+    // 캔들
     slice.forEach((c,i) => {
       const isUp=c.closePrice>=c.openPrice, color=isUp?COLOR.UP:COLOR.DOWN;
       const cx=PAD_L+i*candleW+candleW/2;
@@ -203,6 +260,7 @@ export default function StockChart({ code, name }: StockChartProps) {
       ctx.fillRect(PAD_L+i*candleW+candleW*0.1, top, Math.max(1,candleW*0.8), Math.max(1,bot-top));
     });
 
+    // X축
     ctx.fillStyle=COLOR.AXIS; ctx.font='10px monospace'; ctx.textAlign='center';
     const step=Math.max(1,Math.floor(20/candleW));
     slice.forEach((c,i) => {
@@ -210,6 +268,7 @@ export default function StockChart({ code, name }: StockChartProps) {
       ctx.fillText(fmtDate(c.date,period), PAD_L+i*candleW+candleW/2, CH-6);
     });
 
+    // 거래량
     const maxV=Math.max(...slice.map(c=>c.volume),1);
     slice.forEach((c,i) => {
       vctx.fillStyle=c.closePrice>=c.openPrice?COLOR.VOLUME_UP:COLOR.VOLUME_DN;
@@ -217,6 +276,7 @@ export default function StockChart({ code, name }: StockChartProps) {
       vctx.fillRect(PAD_L+i*candleW+candleW*0.1, VH-h, Math.max(1,candleW*0.8), h);
     });
 
+    // 십자선
     xctx.clearRect(0,0,W,CH);
     if (cursor && hovIdx!==null && hovIdx>=start && hovIdx<start+slice.length) {
       const li=hovIdx-start, lx=PAD_L+li*candleW+candleW/2, ly=cursor.y;
@@ -225,7 +285,7 @@ export default function StockChart({ code, name }: StockChartProps) {
       xctx.beginPath(); xctx.moveTo(PAD_L,ly); xctx.lineTo(W-PAD_R,ly); xctx.stroke();
       xctx.setLineDash([]);
       const pVal=minP+(1-(ly-PAD_T)/priceH)*(maxP-minP);
-      xctx.fillStyle='rgba(0,0,0,0.75)'; xctx.fillRect(W-PAD_R+1,ly-9,PAD_R-2,18);
+      xctx.fillStyle='rgba(0,0,0,0.8)'; xctx.fillRect(W-PAD_R+1,ly-9,PAD_R-2,18);
       xctx.fillStyle='#fff'; xctx.font='10px monospace'; xctx.textAlign='center';
       xctx.fillText(pVal.toLocaleString('ko-KR',{maximumFractionDigits:0}), W-PAD_R/2, ly+4);
     }
@@ -265,7 +325,15 @@ export default function StockChart({ code, name }: StockChartProps) {
       <div className="sc-chart-area">
         <div className="sc-canvas-wrap">
           <canvas ref={chartRef} className="sc-canvas" />
-          <canvas ref={crossRef} className="sc-cross-canvas" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} />
+          {/* crossRef가 최상단 → 여기에 mousemove/wheel 모두 처리 */}
+          <canvas
+            ref={crossRef}
+            className="sc-cross-canvas"
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          />
         </div>
         {loading && <div className="sc-loading">데이터 로딩 중...</div>}
         {!loading && error && <div className="sc-error">{error}</div>}
@@ -274,7 +342,7 @@ export default function StockChart({ code, name }: StockChartProps) {
           <canvas ref={volRef} className="sc-vol-canvas" />
         </div>
       </div>
-      <p className="sc-hint">↑↓ 스크롤: 줌 | 좌우 스크롤: 이동</p>
+      <p className="sc-hint">↑↓ 스크롤: 줌 &nbsp;|&nbsp; 좌우 스크롤 / 드래그: 이동</p>
     </div>
   );
 }

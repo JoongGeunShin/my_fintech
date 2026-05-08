@@ -132,6 +132,10 @@
   background: transparent;
 }
 
+.sc-cross-canvas:active {
+  cursor: grabbing;
+}
+
 /* ── 거래량 ──────────────────────────────────────── */
 .sc-vol-area {
   position: relative;

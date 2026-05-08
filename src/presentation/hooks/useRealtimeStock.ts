@@ -132,9 +132,9 @@ export function useRealtimeOrderBook(code: string | null) {
     socket.on('disconnect',            onDisconnect);
     socket.on(EVENTS.ORDERBOOK_UPDATE, onData);
 
-    if (socket.connected && codeRef.current) {
+    if (socket.connected) {
       setIsConnected(true);
-      subscribe(socket, codeRef.current);
+      if (codeRef.current) subscribe(socket, codeRef.current);
     }
 
     return () => {
@@ -155,6 +155,7 @@ export function useRealtimeOrderBook(code: string | null) {
       setOrderBook(null);
     }
     if (code && socket.connected) {
+      setIsConnected(true);
       subscribe(socket, code);
     }
   }, [code, subscribe, unsubscribe]);
@@ -205,9 +206,9 @@ export function useRealtimeTrade(code: string | null, maxHistory = 60) {
     socket.on('disconnect',        onDisconnect);
     socket.on(EVENTS.TRADE_UPDATE, onData);
 
-    if (socket.connected && codeRef.current) {
+    if (socket.connected) {
       setIsConnected(true);
-      subscribe(socket, codeRef.current);
+      if (codeRef.current) subscribe(socket, codeRef.current);
     }
 
     return () => {
@@ -229,6 +230,7 @@ export function useRealtimeTrade(code: string | null, maxHistory = 60) {
       setTrades([]);
     }
     if (code && socket.connected) {
+      setIsConnected(true);
       subscribe(socket, code);
     }
   }, [code, subscribe, unsubscribe]);
