@@ -1,5 +1,6 @@
 // src/presentation/pages/home/HomePage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Canvas from '../../components/Canvas/Canvas';
 import RealtimePanel from '../../components/RealtimePanel/RealtimePanel';
 import ScreeningPanel from '../../components/ScreeningPanel/ScreeningPanel';
@@ -77,6 +78,19 @@ export default function HomePage() {
           </div>
           <div className="home-canvas-meta">
             <span>활동량: <strong>{typeCount}</strong></span>
+            <Link to="/trading" style={{
+              padding: '5px 12px',
+              borderRadius: 6,
+              border: '1px solid rgba(170,59,255,0.4)',
+              background: 'rgba(170,59,255,0.08)',
+              color: 'var(--accent)',
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}>
+              자동매매 →
+            </Link>
             <button className="home-clear-btn" onClick={clearCanvas}>캔버스 초기화</button>
           </div>
         </div>
