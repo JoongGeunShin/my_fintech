@@ -1,0 +1,324 @@
+/* ── 레이아웃 ─────────────────────────────────────────────── */
+.td-root {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 헤더 ────────────────────────────────────────────────── */
+.td-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 95%, var(--accent) 5%);
+  flex-wrap: wrap;
+}
+
+.td-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.td-back-btn:hover { background: var(--accent-bg); }
+
+.td-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-h);
+  flex: 1;
+}
+
+.td-conn-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text);
+}
+.td-conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+.td-conn-dot.on  { background: #22c55e; }
+.td-conn-dot.off { background: #ef4444; }
+
+.td-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.td-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, background .15s;
+  background: transparent;
+  color: var(--text-h);
+}
+.td-btn:disabled { opacity: .38; cursor: default; }
+.td-btn.start  { border-color: #22c55e; color: #22c55e; }
+.td-btn.start:not(:disabled):hover { background: rgba(34,197,94,.12); }
+.td-btn.stop   { border-color: #ef4444; color: #ef4444; }
+.td-btn.stop:not(:disabled):hover  { background: rgba(239,68,68,.12); }
+.td-btn.reset  { border-color: var(--border); }
+.td-btn.reset:not(:disabled):hover { background: var(--accent-bg); }
+
+/* ── 메인 콘텐츠 ─────────────────────────────────────────── */
+.td-body {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ── 알림 배너 ───────────────────────────────────────────── */
+.td-banner {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid;
+}
+.td-banner.halted {
+  background: rgba(239,68,68,.1);
+  border-color: rgba(239,68,68,.4);
+  color: #ef4444;
+}
+
+/* ── 카드 공통 ───────────────────────────────────────────── */
+.td-card {
+  background: color-mix(in srgb, var(--bg) 97%, var(--text) 3%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.td-card-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+/* ── 상단 2열 카드 ────────────────────────────────────────── */
+.td-top-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 680px) {
+  .td-top-row { grid-template-columns: 1fr; }
+}
+
+/* ── 포트폴리오 카드 ─────────────────────────────────────── */
+.td-portfolio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+.td-pf-item { display: flex; flex-direction: column; gap: 2px; }
+.td-pf-label { font-size: 11px; color: var(--text); }
+.td-pf-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+.td-pf-value.pos { color: #22c55e; }
+.td-pf-value.neg { color: #ef4444; }
+.td-pf-value.neutral { color: var(--text); }
+
+/* ── 포지션 카드 ─────────────────────────────────────────── */
+.td-position-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 80px;
+  color: var(--text);
+  font-size: 13px;
+  opacity: .6;
+}
+
+.td-position-info { display: flex; flex-direction: column; gap: 8px; }
+
+.td-pos-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+.td-pos-code { font-size: 12px; color: var(--text); margin-left: 4px; }
+
+.td-pos-prices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.td-pos-price-item { display: flex; flex-direction: column; gap: 2px; }
+.td-pos-price-label { font-size: 10px; color: var(--text); }
+.td-pos-price-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.td-pos-pnl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.td-pos-pnl {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.td-pos-pnl.pos  { color: #22c55e; }
+.td-pos-pnl.neg  { color: #ef4444; }
+.td-pos-pnl.zero { color: var(--text); }
+
+.td-pos-stops {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.td-pos-stop-item { display: flex; gap: 4px; }
+.td-pos-stop-label { color: var(--text); }
+.td-pos-stop-val.sl { color: #ef4444; font-weight: 600; }
+.td-pos-stop-val.tp { color: #22c55e; font-weight: 600; }
+
+/* ── 신호 테이블 ─────────────────────────────────────────── */
+.td-signals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.td-signals-table th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--text);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.td-signals-table td {
+  padding: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+.td-signals-table tr:last-child td { border-bottom: none; }
+
+.td-signal-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.td-signal-badge.BUY  { background: rgba(34,197,94,.15);  color: #22c55e; }
+.td-signal-badge.SELL { background: rgba(239,68,68,.15);  color: #ef4444; }
+.td-signal-badge.HOLD { background: rgba(107,114,128,.12); color: #9ca3af; }
+
+.td-score-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.td-score-bar-bg {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 48px;
+}
+.td-score-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .3s;
+}
+
+/* ── 거래 내역 테이블 ─────────────────────────────────────── */
+.td-trades-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.td-trades-table th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--text);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.td-trades-table td {
+  padding: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+.td-trades-table tr:last-child td { border-bottom: none; }
+
+.td-side-buy  { color: #22c55e; font-weight: 700; }
+.td-side-sell { color: #ef4444; font-weight: 700; }
+
+.td-reason-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.td-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text);
+  font-size: 13px;
+  opacity: .6;
+}
+
+/* ── 상태 표시 (running indicator) ─────────────────────────── */
+.td-running-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: td-pulse 1.8s ease-out infinite;
+  display: inline-block;
+  margin-right: 5px;
+}
+@keyframes td-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}

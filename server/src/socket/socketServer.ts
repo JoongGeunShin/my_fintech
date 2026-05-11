@@ -10,6 +10,7 @@ import {
   getScreeningResult,
   ScreeningResult,
 } from '../services/optional/screeningPipelineService.js';
+import { tradingEngineService } from '../services/strategy/tradingEngineService.js';
 
 export const EVENTS = {
   SCREENING_UPDATE:      'screening:update',
@@ -24,6 +25,11 @@ export const EVENTS = {
   UNSUBSCRIBE_ORDERBOOK: 'unsubscribe:orderbook',
   SUBSCRIBE_TRADE:       'subscribe:trade',
   UNSUBSCRIBE_TRADE:     'unsubscribe:trade',
+  // 자동매매
+  TRADING_STATUS:   'trading:status',
+  TRADING_ORDER:    'trading:order',
+  TRADING_POSITION: 'trading:position',
+  TRADING_HALTED:   'trading:halted',
 } as const;
 
 const ROOM_SCREENING = 'screening';
@@ -107,6 +113,11 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
 
   kisWebSocketService.connect().catch((err) => {
     console.error('[Socket] KIS WS 초기 연결 실패:', err);
+  });
+
+  // 트레이딩 엔진 → 모든 연결된 클라이언트에 브로드캐스트
+  tradingEngineService.setBroadcast((event, data) => {
+    io?.emit(event, data);
   });
 
   io.on('connection', (socket: Socket) => {

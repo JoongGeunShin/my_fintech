@@ -5,6 +5,9 @@ import { getOptionalSearchList } from './optionalSearchListService.js';
 
 const MAIN_GROUP = 'my_fintech';
 
+// my_fintech 레벨(최대 3)보다 항상 높은 점수를 부여할 트레이딩 우선 그룹
+const TRADING_PRIORITY_GROUPS = new Set(['조건']);
+
 // ── 조건 카테고리 ─────────────────────────────────────────────
 type ConditionCategory = 'REQUIRED' | 'SUPPORT' | 'DETAIL' | 'UNKNOWN';
 
@@ -192,11 +195,16 @@ export async function runFullScreening(): Promise<ScreeningResult> {
         conditionName: seqInfoMap.get(seq)?.conditionName ?? `seq${seq}`,
       }));
 
+      // 트레이딩 우선 그룹(예: screened_조건)은 my_fintech 레벨(최대 3)보다 높은 점수 부여
+      const groupScore = TRADING_PRIORITY_GROUPS.has(groupName)
+        ? 10 * groupPassedSeqs.size   // 10, 20, 30… (레벨 1~3보다 항상 높음)
+        : groupPassedSeqs.size;
+
       groupStocks.push({
         ...meta,
         passedSequences: [...groupPassedSeqs],
         passedSequenceInfos,
-        score: groupPassedSeqs.size, // 기타 그룹은 통과 조건 수를 score로 사용
+        score: groupScore,
         updatedAt: new Date() as unknown as import('firebase-admin/firestore').Timestamp,
       });
     }

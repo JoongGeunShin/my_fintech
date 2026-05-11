@@ -17,6 +17,7 @@ import stockInvestorRouter from './routes/stockInvestors.js';
 import stockPeriodRouter from './routes/stockPeriod.js';
 import stockPeriodSpecifiedRouter from './routes/stockPeriodSpecified.js';
 import stocksRouter from './routes/stocks.js';
+import tradingRouter from './routes/trading.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -51,6 +52,7 @@ app.use('/item/stocks',                  stocksRouter);               // 가장 
 app.use('/optional/search-list/sequence', optionalSearchItemRouter);
 app.use('/optional/search-list',          optionalSearchListRouter);
 app.use('/optional/screening',            screeningResultsRouter);
+app.use('/trading',                       tradingRouter);
 
 app.use((_req, res) => {
   res.status(404).json({
@@ -77,6 +79,13 @@ httpServer.listen(PORT, () => {
   console.log(`  최신 결과:    http://localhost:${PORT}/optional/screening`);
   console.log(`  수동 실행:    POST http://localhost:${PORT}/optional/screening/run`);
   console.log(`  레벨별:       http://localhost:${PORT}/optional/screening/level/2`);
+  console.log('\n< 자동매매 (가상) >');
+  console.log(`  상태 조회:    http://localhost:${PORT}/trading/status`);
+  console.log(`  지표 조회:    http://localhost:${PORT}/trading/metrics`);
+  console.log(`  거래 내역:    http://localhost:${PORT}/trading/trades`);
+  console.log(`  엔진 시작:    POST http://localhost:${PORT}/trading/start`);
+  console.log(`  엔진 중지:    POST http://localhost:${PORT}/trading/stop`);
+  console.log(`  포트폴리오 초기화: POST http://localhost:${PORT}/trading/reset`);
 
   const requiredEnvVars = [
     'KIS_API_APP_KEY',
