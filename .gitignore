@@ -25,3 +25,4 @@ dist-ssr
 .env
 server/strategy/intraday_quant_strategy.md
 server/strategy/trading_system_strategy.txt
+.claude/settings.local.json
