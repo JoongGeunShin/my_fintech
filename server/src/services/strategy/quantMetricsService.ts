@@ -8,15 +8,18 @@ import { kisWebSocketService } from '../kis/kisWebSocketService.js';
 import { calcATR, getMinuteBars } from '../kis/minuteChartService.js';
 import { memCache } from '../../utils/cache.js';
 
-const TIS_WINDOW     = 100;  // TIS 계산에 사용할 최근 틱 수
+const TIS_WINDOW      = 100; // TIS 계산 최근 틱 수
+const ES_WINDOW       = 50;  // 체결강도 롤링 윈도우
 const WALL_MULTIPLIER = 3;   // 평균 대비 N배 이상 → 벽 판정
+const PRICE_HISTORY   = 5;   // 단기 가격 추세 참조 틱 수
+const BOR_HISTORY     = 10;  // BOR 변동성 추적 기록 수
 
 type SignalListener = (state: StockQuantState) => void;
 
 class QuantMetricsService {
-  private states        = new Map<string, StockQuantState>();
-  private tisBuffers    = new Map<string, Array<{ buy: boolean; volume: number }>>();
-  private obCallbacks   = new Map<string, (d: RealtimeOrderBook) => void>();
+  private states         = new Map<string, StockQuantState>();
+  private tisBuffers     = new Map<string, Array<{ buy: boolean; volume: number }>>();
+  private obCallbacks    = new Map<string, (d: RealtimeOrderBook) => void>();
   private tradeCallbacks = new Map<string, (d: RealtimeTrade) => void>();
   private signalListeners: SignalListener[] = [];
 
@@ -36,7 +39,6 @@ class QuantMetricsService {
     kisWebSocketService.subscribeOrderBook(code, obCb);
     kisWebSocketService.subscribeTrade(code, tradeCb);
 
-    // ATR 비동기 조회 (캐시 활용)
     this._fetchATR(code);
     console.log(`[Quant] 구독 시작: ${name}(${code})`);
   }
@@ -85,10 +87,17 @@ class QuantMetricsService {
       vwapNumerator:   0, vwapDenominator: 0, vwap: 0, vwapDeviation: 0,
       cvd: 0, cvdPrev: 0, cvdDirection: 'flat',
       recentBuyTicks: 0, recentSellTicks: 0, tis: 0.5,
+      executionStrength: 50, execStrengthBuf: [],
       bor: 1.0, hasWallAsk: false, hasWallBid: false,
+      nearAskDepth: 0, nearBidDepth: 0,
+      wallAbsorbedAsk: false, wallAbsorbedBid: false,
+      borHistory: [], borVariance: 0,
       currentMinute: '', currentMinuteVolume: 0,
       minuteVolumeHistory: [], vrate: 1.0, vrateReliable: false,
       currentPrice: 0, openPrice: 0, highPrice: 0, lowPrice: 0, accVolume: 0,
+      priceHistory: [], priceTrend: 'flat',
+      cvdDivergence: false,
+      majorPlayerScore: 0, majorPlayerPhase: 'neutral',
       atr: 0, atrFetched: false,
       score: 0, signal: 'HOLD',
       lastUpdated: new Date(),
@@ -122,6 +131,10 @@ class QuantMetricsService {
     const s = this.states.get(data.code);
     if (!s) return;
 
+    // 이전 벽 상태 저장 (소멸 감지용)
+    const prevWallAsk = s.hasWallAsk;
+    const prevWallBid = s.hasWallBid;
+
     // BOR = 매도잔량합 / 매수잔량합
     const totalAsk = data.totalAskVolume;
     const totalBid = data.totalBidVolume;
@@ -130,11 +143,26 @@ class QuantMetricsService {
     // 벽 감지: 개별 잔량이 평균의 N배 이상
     const allVols = [...data.askVolumes, ...data.bidVolumes];
     const avgVol  = allVols.length > 0
-      ? allVols.reduce((a, v) => a + v, 0) / allVols.length
-      : 0;
+      ? allVols.reduce((a, v) => a + v, 0) / allVols.length : 0;
     const wallThreshold = avgVol * WALL_MULTIPLIER;
     s.hasWallAsk = data.askVolumes.some((v) => v > wallThreshold);
     s.hasWallBid = data.bidVolumes.some((v) => v > wallThreshold);
+
+    // 벽 소멸 감지 (단일 사이클 플래그)
+    s.wallAbsorbedAsk = prevWallAsk && !s.hasWallAsk;
+    s.wallAbsorbedBid = prevWallBid && !s.hasWallBid;
+
+    // 근접 호가 잔량 (1~3호가 합산 — 실제 매수/매도 가능 물량)
+    s.nearAskDepth = data.askVolumes.slice(0, 3).reduce((a, v) => a + v, 0);
+    s.nearBidDepth = data.bidVolumes.slice(0, 3).reduce((a, v) => a + v, 0);
+
+    // BOR 변동성 추적 (허수 주문 감지)
+    s.borHistory.push(s.bor);
+    if (s.borHistory.length > BOR_HISTORY) s.borHistory.shift();
+    if (s.borHistory.length >= 3) {
+      const mean = s.borHistory.reduce((a, v) => a + v, 0) / s.borHistory.length;
+      s.borVariance = s.borHistory.reduce((a, v) => a + (v - mean) ** 2, 0) / s.borHistory.length;
+    }
 
     s.lastUpdated = new Date();
     this._calcScore(s);
@@ -168,22 +196,30 @@ class QuantMetricsService {
     s.cvdDirection =
       s.cvd > s.cvdPrev ? 'up' : s.cvd < s.cvdPrev ? 'down' : 'flat';
 
-    // TIS (circular buffer)
-    const buf   = this.tisBuffers.get(data.code)!;
-    const isBuy = data.netBidVolume > 0;
+    // TIS (최근 N 틱 기반)
+    const buf    = this.tisBuffers.get(data.code)!;
+    const isBuy  = data.netBidVolume > 0;
     buf.push({ buy: isBuy, volume });
     if (buf.length > TIS_WINDOW) buf.shift();
-
     const buyCount = buf.filter((t) => t.buy).length;
     s.recentBuyTicks  = buyCount;
     s.recentSellTicks = buf.length - buyCount;
     s.tis = buf.length > 0 ? buyCount / buf.length : 0.5;
 
-    // VRate (세션 내 분봉 거래량 기반 근사치)
+    // 체결강도 (롤링 50틱 거래량 가중 — 표준 HTS식)
+    const buyVol  = Math.max(0, (volume + data.netBidVolume) / 2);
+    const sellVol = Math.max(0, (volume - data.netBidVolume) / 2);
+    s.execStrengthBuf.push({ buy: buyVol, sell: sellVol });
+    if (s.execStrengthBuf.length > ES_WINDOW) s.execStrengthBuf.shift();
+    const totalBuy  = s.execStrengthBuf.reduce((a, t) => a + t.buy,  0);
+    const totalSell = s.execStrengthBuf.reduce((a, t) => a + t.sell, 0);
+    const totalES   = totalBuy + totalSell;
+    s.executionStrength = totalES > 0 ? (totalBuy / totalES) * 100 : 50;
+
+    // VRate (분봉 거래량 비율)
     const now    = new Date();
     const minute = now.getHours().toString().padStart(2, '0') +
                    now.getMinutes().toString().padStart(2, '0');
-
     if (s.currentMinute !== minute) {
       if (s.currentMinute !== '') {
         s.minuteVolumeHistory.push(s.currentMinuteVolume);
@@ -194,12 +230,21 @@ class QuantMetricsService {
     }
     s.currentMinuteVolume += volume;
     s.vrateReliable = s.minuteVolumeHistory.length >= 3;
-
     if (s.vrateReliable) {
       const avgMinVol = s.minuteVolumeHistory.reduce((a, v) => a + v, 0) / s.minuteVolumeHistory.length;
       s.vrate = avgMinVol > 0 ? s.currentMinuteVolume / avgMinVol : 1.0;
     } else {
       s.vrate = 1.0;
+    }
+
+    // 단기 가격 추세 (최근 5 체결 기준)
+    s.priceHistory.push(price);
+    if (s.priceHistory.length > PRICE_HISTORY) s.priceHistory.shift();
+    if (s.priceHistory.length >= 3) {
+      const oldest = s.priceHistory[0];
+      const newest = s.priceHistory[s.priceHistory.length - 1];
+      const change = (newest - oldest) / oldest;
+      s.priceTrend = change > 0.001 ? 'up' : change < -0.001 ? 'down' : 'flat';
     }
 
     s.lastUpdated = new Date();
@@ -210,31 +255,73 @@ class QuantMetricsService {
   // ── 점수 계산 ──────────────────────────────────────────────
 
   private _calcScore(s: StockQuantState): void {
-    // 각 지표를 -1 ~ +1 로 정규화
-    // BOR: 0.7 이하 → +1, 1.3 이상 → -1
+    // 1. 기존 지표 정규화
     const borNorm  = clamp(-(s.bor - 1.0) / 0.3, -1, 1);
-    // TIS: 0.65 이상 → +1, 0.35 이하 → -1
     const tisNorm  = clamp((s.tis - 0.5) / 0.15, -1, 1);
-    // CVD 방향: up → +0.7, down → -0.7, flat → 0
     const cvdNorm  = s.cvdDirection === 'up' ? 0.7 : s.cvdDirection === 'down' ? -0.7 : 0;
-    // VWAP 이탈도: -0.3% 이하 → +1, +0.3% 이상 → -1
     const vwapNorm = clamp(-s.vwapDeviation / 0.3, -1, 1);
 
+    // 2. 체결강도 정규화 (65%→+1, 35%→-1)
+    const esNorm = clamp((s.executionStrength - 50) / 15, -1, 1);
+
+    // 3. CVD 다이버전스 — 가격방향 ≠ CVD방향 = 주포 개입
+    s.cvdDivergence = (
+      (s.priceTrend === 'down' && s.cvdDirection === 'up') ||   // 하락 중 CVD 상승 = 매집
+      (s.priceTrend === 'up'   && s.cvdDirection === 'down')    // 상승 중 CVD 하락 = 분산
+    );
+
+    // 4. 주포 점수 산출
+    let jupoScore = 0;
+    // 가격하락 + CVD상승 → 저점 매집 (역발상 강세)
+    if (s.priceTrend === 'down' && s.cvdDirection === 'up')   jupoScore += 0.45;
+    // 가격상승 + CVD하락 → 고점 분산 (역발상 약세)
+    if (s.priceTrend === 'up'   && s.cvdDirection === 'down') jupoScore -= 0.45;
+    // 매도벽 소멸 → 저항 제거, 급등 임박 (가장 강한 매수 신호)
+    if (s.wallAbsorbedAsk) jupoScore += 0.40;
+    // 매수벽 소멸 → 지지 붕괴, 급락 임박
+    if (s.wallAbsorbedBid) jupoScore -= 0.40;
+    // 매수벽 유지 + CVD 상승 → 세력 지지선 형성
+    if (s.hasWallBid && s.cvdDirection === 'up')   jupoScore += 0.20;
+    // 매도벽 유지 + CVD 하락 → 세력 저항선 형성
+    if (s.hasWallAsk && s.cvdDirection === 'down') jupoScore -= 0.20;
+
+    s.majorPlayerScore = clamp(jupoScore, -1, 1);
+    s.majorPlayerPhase =
+      s.majorPlayerScore > 0.3  ? 'accumulating' :
+      s.majorPlayerScore < -0.3 ? 'distributing' : 'neutral';
+
+    // 5. 종합 점수 (가중합산)
     s.score = clamp(
-      borNorm  * 0.25 +
-      tisNorm  * 0.30 +
-      cvdNorm  * 0.25 +
-      vwapNorm * 0.20,
+      borNorm  * 0.20 +
+      tisNorm  * 0.25 +
+      cvdNorm  * 0.15 +
+      vwapNorm * 0.15 +
+      esNorm   * 0.15 +   // 체결강도 추가
+      s.majorPlayerScore * 0.10,
       -1, 1
     );
 
-    // 진입 조건 — VRate 데이터 부족 시 해당 조건 면제
+    // 벽 소멸 즉시 점수 증폭 (주포 신호 극대화)
+    if (s.wallAbsorbedAsk && s.score > 0.2) s.score = Math.min(s.score * 1.3, 1);
+    if (s.wallAbsorbedBid && s.score < -0.2) s.score = Math.max(s.score * 1.3, -1);
+
+    // 6. 매매 신호 판정
     const vrateOK = !s.vrateReliable || s.vrate > 1.5;
+    // 체결강도 60% 이상 OR 매도벽 소멸(즉각 진입)
+    const esOK = s.executionStrength > 60 || s.wallAbsorbedAsk;
 
     const isBuy =
-      s.score >  0.6 && vrateOK && s.cvdDirection === 'up'  && s.bor < 0.9;
+      s.score > 0.6   &&
+      vrateOK          &&
+      s.cvdDirection === 'up' &&
+      s.bor < 0.9      &&
+      esOK;
+
     const isSell =
-      s.score < -0.6 && vrateOK && s.cvdDirection === 'down' && s.bor > 1.1;
+      s.score < -0.6  &&
+      vrateOK          &&
+      s.cvdDirection === 'down' &&
+      s.bor > 1.1;
 
     s.signal = isBuy ? 'BUY' : isSell ? 'SELL' : 'HOLD';
   }

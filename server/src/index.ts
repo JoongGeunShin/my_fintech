@@ -7,7 +7,7 @@ import { createServer } from 'http';
 import './config/firebase.js';
 
 import { errorHandler } from './middleware/errorHandler.js';
-import { startScreeningScheduler } from './scheduler/screeningScheduler.js';
+import { startScreeningScheduler, schedulePreMarketRuns } from './scheduler/screeningScheduler.js';
 import { initSocketServer } from './socket/socketServer.js';
 
 import optionalSearchItemRouter from './routes/optional/optionalSearchItem.js';
@@ -111,6 +111,7 @@ httpServer.listen(PORT, () => {
 
   if (firebaseReady) {
     startScreeningScheduler();
+    schedulePreMarketRuns(); // 8:40 / 8:50 / 8:57 장전 필터 예약
   } else {
     console.warn('[Scheduler] Firebase 환경변수 미설정 → 스케줄러 비활성화');
   }
