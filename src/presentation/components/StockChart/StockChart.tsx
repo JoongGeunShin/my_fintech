@@ -20,14 +20,14 @@ interface StockChartProps {
 }
 
 const COLOR = {
-  UP:        '#ef4444',
-  DOWN:      '#3b82f6',
-  VOLUME_UP: 'rgba(239,68,68,0.5)',
-  VOLUME_DN: 'rgba(59,130,246,0.5)',
-  GRID:      'rgba(255,255,255,0.06)',
-  AXIS:      'rgba(255,255,255,0.35)',
-  BG:        '#131722',
-  CROSS:     'rgba(255,255,255,0.6)',
+  UP:        '#f04f4f',
+  DOWN:      '#3b9eff',
+  VOLUME_UP: 'rgba(240,79,79,0.45)',
+  VOLUME_DN: 'rgba(59,158,255,0.45)',
+  GRID:      'rgba(255,255,255,0.04)',
+  AXIS:      'rgba(255,255,255,0.30)',
+  BG:        '#0e1120',
+  CROSS:     'rgba(255,255,255,0.55)',
   MA1:       '#f59e0b',
   MA2:       '#a855f7',
   MA3:       '#22d3ee',
@@ -188,21 +188,22 @@ export default function StockChart({ code, name }: StockChartProps) {
     const canvas = chartRef.current, volCvs = volRef.current, crossCvs = crossRef.current;
     if (!canvas || !volCvs || !crossCvs) return;
 
-    const W  = canvas.width  = canvas.offsetWidth;
-    const CH = canvas.height = canvas.offsetHeight;
-    const VH = volCvs.height = volCvs.offsetHeight;
+    const W  = canvas.width  = canvas.offsetWidth  || canvas.clientWidth  || 800;
+    const CH = canvas.height = canvas.offsetHeight || canvas.clientHeight || 380;
+    const VH = volCvs.height = volCvs.offsetHeight || volCvs.clientHeight || 80;
+    volCvs.width   = W;
     crossCvs.width = W; crossCvs.height = CH;
 
-    const ctx = canvas.getContext('2d')!;
+    const ctx  = canvas.getContext('2d')!;
     const vctx = volCvs.getContext('2d')!;
     const xctx = crossCvs.getContext('2d')!;
 
-    ctx.fillStyle = COLOR.BG; ctx.fillRect(0, 0, W, CH);
+    ctx.fillStyle  = COLOR.BG; ctx.fillRect(0, 0, W, CH);
     vctx.fillStyle = COLOR.BG; vctx.fillRect(0, 0, W, VH);
 
     if (candles.length === 0) {
-      ctx.fillStyle = loading ? COLOR.AXIS : '#ef4444';
-      ctx.font = '13px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle  = loading ? COLOR.AXIS : '#f04f4f';
+      ctx.font = '13px var(--sans, sans-serif)'; ctx.textAlign = 'center';
       ctx.fillText(loading ? '로딩 중...' : (error ?? '데이터 없음'), W / 2, CH / 2);
       return;
     }
@@ -269,11 +270,23 @@ export default function StockChart({ code, name }: StockChartProps) {
     });
 
     // 거래량
-    const maxV=Math.max(...slice.map(c=>c.volume),1);
-    slice.forEach((c,i) => {
-      vctx.fillStyle=c.closePrice>=c.openPrice?COLOR.VOLUME_UP:COLOR.VOLUME_DN;
-      const h=(c.volume/maxV)*(VH-4);
-      vctx.fillRect(PAD_L+i*candleW+candleW*0.1, VH-h, Math.max(1,candleW*0.8), h);
+    const VOL_PAD_R = PAD_R;
+    const maxV = Math.max(...slice.map(c => c.volume), 1);
+    // 거래량 그리드 (상단 기준선)
+    vctx.strokeStyle = 'rgba(255,255,255,0.04)'; vctx.lineWidth = 1;
+    vctx.beginPath(); vctx.moveTo(PAD_L, 2); vctx.lineTo(W - VOL_PAD_R, 2); vctx.stroke();
+    // 거래량 Y축 최대값 레이블
+    vctx.fillStyle = 'rgba(255,255,255,0.25)';
+    vctx.font = '9px var(--mono, monospace)'; vctx.textAlign = 'right';
+    const maxVLabel = maxV >= 1_000_000
+      ? `${(maxV/1_000_000).toFixed(1)}M`
+      : maxV >= 1_000 ? `${(maxV/1_000).toFixed(0)}K` : String(maxV);
+    vctx.fillText(maxVLabel, W - 4, 10);
+    // 거래량 바
+    slice.forEach((c, i) => {
+      vctx.fillStyle = c.closePrice >= c.openPrice ? COLOR.VOLUME_UP : COLOR.VOLUME_DN;
+      const h = Math.max(1, (c.volume / maxV) * (VH - 8));
+      vctx.fillRect(PAD_L + i * candleW + candleW * 0.1, VH - h, Math.max(1, candleW * 0.8), h);
     });
 
     // 십자선

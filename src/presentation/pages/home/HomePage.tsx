@@ -11,6 +11,24 @@ import { useRealtimeOrderBook, useRealtimeTrade } from '../../hooks/useRealtimeS
 import { useScreeningFirestore } from '../../hooks/useScreeningFirestore';
 import './Home.css';
 
+async function checkNxtSupport(code: string): Promise<boolean> {
+  try {
+    const today = new Date();
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const endDate   = fmt(today);
+    const startDate = fmt(new Date(today.getTime() - 30 * 86_400_000));
+    const res  = await fetch(
+      `/item/stocks/period/specified?code=${code}&startDate=${startDate}&endDate=${endDate}&period=D&market=UN`
+    );
+    if (!res.ok) return false;
+    const json = await res.json() as { success: boolean; data?: { dailyPrices?: unknown[] } };
+    return json.success && (json.data?.dailyPrices?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export default function HomePage() {
   const { typeCount } = useActivity();
   const { lines, handleMouseDown, handleMouseMove, handleMouseUp, clearCanvas } = useKonvaCanvas();
@@ -20,6 +38,7 @@ export default function HomePage() {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState<string | undefined>(undefined);
   const [chartVisible, setChartVisible] = useState(false);
+  const [isNxtSupported, setIsNxtSupported] = useState<boolean | null>(null);
 
   const { orderBook, isConnected: obConnected } = useRealtimeOrderBook(selectedCode);
   const { latestTrade, trades, isConnected: trConnected } = useRealtimeTrade(selectedCode, 50);
@@ -51,6 +70,13 @@ export default function HomePage() {
     height: Math.max(200, windowHeight - 420),
   }), [canvasWidth, windowHeight]);
 
+  // NXT 지원 여부: 종목 선택 시 UN 시장 데이터 존재 여부로 판단
+  useEffect(() => {
+    if (!selectedCode) { setIsNxtSupported(null); return; }
+    setIsNxtSupported(null); // 조회 중
+    checkNxtSupport(selectedCode).then(setIsNxtSupported);
+  }, [selectedCode]);
+
   const handleStockSelect = useCallback((code: string, name: string) => {
     setSelectedCode((prev) => {
       const next = prev === code ? null : code;
@@ -59,12 +85,6 @@ export default function HomePage() {
     });
     setSelectedName((prev) => prev === name ? undefined : name);
   }, []);
-
-  // 초단기 그룹 추출 (otherGroups 중 "초단기" 포함 키 우선)
-  // const shortTermKey = Object.keys(otherGroups).find((k) =>
-  //   k.includes('초단기') || k.includes('단기') || k.includes('short')
-  // ) ?? Object.keys(otherGroups)[0];
-  // const shortTermStocks = shortTermKey ? (otherGroups[shortTermKey] ?? []) : [];
 
   return (
     <div className="home-root">
@@ -81,8 +101,8 @@ export default function HomePage() {
             <Link to="/trading" style={{
               padding: '5px 12px',
               borderRadius: 6,
-              border: '1px solid rgba(170,59,255,0.4)',
-              background: 'rgba(170,59,255,0.08)',
+              border: '1px solid rgba(124,107,240,0.35)',
+              background: 'rgba(124,107,240,0.10)',
               color: 'var(--accent)',
               fontSize: 13,
               fontWeight: 600,
@@ -109,7 +129,7 @@ export default function HomePage() {
       {/* ── 메인 패널 영역 ────────────────────────────────────── */}
       <div className="home-main">
 
-        {/* ── 좌측: 스크리닝 랭킹 패널 (네이버페이 스타일) ───── */}
+        {/* ── 좌측: 스크리닝 랭킹 패널 ───── */}
         <div className="home-screening-col">
           <ScreeningPanel
             byLevel={byLevel}
@@ -146,6 +166,7 @@ export default function HomePage() {
                   trades={trades}
                   latestTrade={latestTrade}
                   isConnected={isConnected}
+                  isNxtSupported={isNxtSupported}
                 />
               </div>
             </>

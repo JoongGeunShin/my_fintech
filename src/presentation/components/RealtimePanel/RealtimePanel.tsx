@@ -1,13 +1,34 @@
 import type { RealtimeOrderBook, RealtimeTrade } from '../../hooks/useRealtimeStock';
 import './RealtimePanel.css';
 
+function getAfterHoursLabel(): string | null {
+  const now = new Date();
+  const t   = now.getHours() * 60 + now.getMinutes();
+  if (t >= 480  && t < 540)  return '장전 동시호가';
+  if (t >= 930  && t < 960)  return '시간외 종가';
+  if (t >= 960  && t < 1080) {
+    const next = Math.ceil((t + 1) / 10) * 10;
+    const h = Math.floor(next / 60);
+    const m = next % 60;
+    return `시간외 단일가 · 다음 체결 ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+  }
+  return null;
+}
+
+function isAfterRegularClose(): boolean {
+  const now = new Date();
+  const t   = now.getHours() * 60 + now.getMinutes();
+  return t >= 930; // 15:30 이후
+}
+
 interface RealtimePanelProps {
-  code: string | null;
-  name?: string;
-  orderBook: RealtimeOrderBook | null;
-  trades: RealtimeTrade[];
-  latestTrade: RealtimeTrade | null;
-  isConnected: boolean;
+  code:            string | null;
+  name?:           string;
+  orderBook:       RealtimeOrderBook | null;
+  trades:          RealtimeTrade[];
+  latestTrade:     RealtimeTrade | null;
+  isConnected:     boolean;
+  isNxtSupported?: boolean | null;
 }
 
 const DISPLAY_LEVELS = 5;
@@ -28,9 +49,9 @@ function VolumeBar({ ratio, side }: { ratio: number; side: 'ask' | 'bid' }) {
 function AskRow({ price, volume, ratio }: { price: number; volume: number; ratio: number }) {
   return (
     <div className="rt-ob-row rt-ob-ask">
-      <span className="rt-ob-vol">{volume.toLocaleString()}</span>
+      <span className="rt-ob-vol">{volume > 0 ? volume.toLocaleString() : '—'}</span>
       <VolumeBar ratio={ratio} side="ask" />
-      <span className="rt-ob-price">{price.toLocaleString()}</span>
+      <span className="rt-ob-price">{price > 0 ? price.toLocaleString() : '—'}</span>
     </div>
   );
 }
@@ -38,9 +59,9 @@ function AskRow({ price, volume, ratio }: { price: number; volume: number; ratio
 function BidRow({ price, volume, ratio }: { price: number; volume: number; ratio: number }) {
   return (
     <div className="rt-ob-row rt-ob-bid">
-      <span className="rt-ob-price">{price.toLocaleString()}</span>
+      <span className="rt-ob-price">{price > 0 ? price.toLocaleString() : '—'}</span>
       <VolumeBar ratio={ratio} side="bid" />
-      <span className="rt-ob-vol">{volume.toLocaleString()}</span>
+      <span className="rt-ob-vol">{volume > 0 ? volume.toLocaleString() : '—'}</span>
     </div>
   );
 }
@@ -50,12 +71,13 @@ function TradeRow({ trade }: { trade: RealtimeTrade }) {
   const isDown = trade.changeSign === '4' || trade.changeSign === '5';
   const dir    = isUp ? '▲' : isDown ? '▼' : '─';
   const cls    = isUp ? 'rt-up' : isDown ? 'rt-down' : '';
+  const isRest = trade.isAfterHours && trade.tradeVolume === 0;
 
   return (
-    <div className="rt-trade-row">
+    <div className={`rt-trade-row${isRest ? ' rt-trade-rest' : ''}`}>
       <span className="rt-trade-time">{formatTime(trade.timestamp)}</span>
       <span className={`rt-trade-price ${cls}`}>{trade.tradePrice.toLocaleString()}</span>
-      <span className="rt-trade-vol">{trade.tradeVolume.toLocaleString()}</span>
+      <span className="rt-trade-vol">{isRest ? '—' : trade.tradeVolume.toLocaleString()}</span>
       <span className={`rt-trade-dir ${cls}`}>{dir}</span>
     </div>
   );
@@ -68,6 +90,7 @@ export default function RealtimePanel({
   trades,
   latestTrade,
   isConnected,
+  isNxtSupported,
 }: RealtimePanelProps) {
   if (!code) {
     return (
@@ -81,17 +104,21 @@ export default function RealtimePanel({
     );
   }
 
+  const afterClose     = isAfterRegularClose();
+  const isNxtNo        = isNxtSupported === false && afterClose;
+  const afterHoursLabel = getAfterHoursLabel();
+
   // 최대 볼륨 계산 (바 크기 기준)
   const askVols = orderBook?.askVolumes.slice(0, DISPLAY_LEVELS) ?? [];
   const bidVols = orderBook?.bidVolumes.slice(0, DISPLAY_LEVELS) ?? [];
   const maxVol  = Math.max(...askVols, ...bidVols, 1);
 
-  const askPrices  = orderBook?.askPrices.slice(0, DISPLAY_LEVELS) ?? [];
-  const bidPrices  = orderBook?.bidPrices.slice(0, DISPLAY_LEVELS) ?? [];
+  const askPrices = orderBook?.askPrices.slice(0, DISPLAY_LEVELS) ?? [];
+  const bidPrices = orderBook?.bidPrices.slice(0, DISPLAY_LEVELS) ?? [];
 
-  const isUp   = latestTrade?.changeSign === '1' || latestTrade?.changeSign === '2';
-  const isDown = latestTrade?.changeSign === '4' || latestTrade?.changeSign === '5';
-  const priceClass = isUp ? 'rt-up' : isDown ? 'rt-down' : '';
+  const isUp        = latestTrade?.changeSign === '1' || latestTrade?.changeSign === '2';
+  const isDown      = latestTrade?.changeSign === '4' || latestTrade?.changeSign === '5';
+  const priceClass  = isUp ? 'rt-up' : isDown ? 'rt-down' : '';
 
   return (
     <section className="realtime-panel">
@@ -101,6 +128,12 @@ export default function RealtimePanel({
           <div className={`rt-dot ${isConnected ? 'rt-dot--on' : 'rt-dot--off'}`} />
           <span className="rt-name">{name ?? code}</span>
           <span className="rt-code">{code}</span>
+          {isNxtNo && (
+            <span className="rt-nxt-badge">NXT 미지원</span>
+          )}
+          {!isNxtNo && afterHoursLabel && (
+            <span className="rt-afterhours-badge">{afterHoursLabel}</span>
+          )}
         </div>
         {latestTrade && (
           <div className="rt-header-right">
@@ -108,11 +141,20 @@ export default function RealtimePanel({
               {latestTrade.tradePrice.toLocaleString()}원
             </span>
             <span className={`rt-change-rate ${priceClass}`}>
-              {latestTrade.changeRate >= 0 ? '▲' : '▼'} {Math.abs(latestTrade.changeRate).toFixed(2)}%
+              {latestTrade.changeSign === '1' || latestTrade.changeSign === '2' ? '▲' : '▼'}{' '}
+              {Math.abs(latestTrade.changeRate).toFixed(2)}%
             </span>
           </div>
         )}
       </div>
+
+      {/* NXT 미지원 안내 배너 */}
+      {isNxtNo && (
+        <div className="rt-nxt-notice">
+          <span className="rt-nxt-notice-icon">🔒</span>
+          <span>넥스트레이드(NXT) 미지원 종목 · 장 마감(15:30) 기준 마지막 데이터</span>
+        </div>
+      )}
 
       <div className="rt-body">
         {/* 호가창 */}
@@ -120,7 +162,9 @@ export default function RealtimePanel({
           <div className="rt-section-title">
             <span>호가창</span>
             {orderBook && (
-              <span className="rt-ob-time">{formatTime(orderBook.timestamp)}</span>
+              <span className="rt-ob-time">
+                {isNxtNo ? '15:30 기준' : formatTime(orderBook.timestamp)}
+              </span>
             )}
           </div>
 
@@ -134,7 +178,9 @@ export default function RealtimePanel({
               {/* 매도 잔량 합계 */}
               <div className="rt-ob-total rt-ob-total-ask">
                 <span className="rt-ob-total-label">총 매도잔량</span>
-                <span className="rt-ob-total-val">{orderBook.totalAskVolume.toLocaleString()}</span>
+                <span className="rt-ob-total-val">
+                  {orderBook.totalAskVolume > 0 ? orderBook.totalAskVolume.toLocaleString() : '—'}
+                </span>
               </div>
 
               {/* 매도호가 (level 5 → 1, 가격 높은 순) */}
@@ -153,7 +199,7 @@ export default function RealtimePanel({
               {/* 스프레드 구분선 */}
               <div className="rt-ob-spread">
                 <span className="rt-ob-spread-label">스프레드</span>
-                {askPrices[0] && bidPrices[0] && (
+                {askPrices[0] != null && bidPrices[0] != null && askPrices[0] > 0 && bidPrices[0] > 0 && (
                   <span className="rt-ob-spread-val">
                     {(askPrices[0] - bidPrices[0]).toLocaleString()}
                   </span>
@@ -173,7 +219,9 @@ export default function RealtimePanel({
               {/* 매수 잔량 합계 */}
               <div className="rt-ob-total rt-ob-total-bid">
                 <span className="rt-ob-total-label">총 매수잔량</span>
-                <span className="rt-ob-total-val">{orderBook.totalBidVolume.toLocaleString()}</span>
+                <span className="rt-ob-total-val">
+                  {orderBook.totalBidVolume > 0 ? orderBook.totalBidVolume.toLocaleString() : '—'}
+                </span>
               </div>
             </div>
           )}
@@ -182,7 +230,7 @@ export default function RealtimePanel({
         {/* 실시간 체결 */}
         <div className="rt-section rt-section-trades">
           <div className="rt-section-title">
-            <span>실시간 체결</span>
+            <span>{isNxtNo ? '마지막 체결' : '실시간 체결'}</span>
             {latestTrade && (
               <span className="rt-trade-acc">
                 누적 {latestTrade.accVolume.toLocaleString()}주
