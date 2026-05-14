@@ -17,7 +17,7 @@ interface CachedApprovalKey{
 let wsKeyCache: CachedApprovalKey | null = null;
 let wsKeyFetchPromise: Promise<string> | null = null;
 
-const KIS_BASE_URL = process.env.KIS_BASE_URL;
+const KIS_BASE_URL = process.env.KIS_BASE_URL ?? 'https://openapi.koreainvestment.com:9443';
 
 export async function getAccessToken(): Promise<string> {
   const now = new Date();
