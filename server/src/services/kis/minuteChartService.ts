@@ -117,7 +117,7 @@ export function calcATR(bars: MinuteBar[], period = 5): number {
 export async function getAccountBalance(): Promise<{ totalEvalAmount: number; availableAmount: number }> {
   const appKey       = process.env.KIS_API_APP_KEY!;
   const appSecretKey = process.env.KIS_API_APP_SECRET_KEY!;
-  const accountId    = process.env.KIS_ACCOUNT_ID!;
+  const accountId    = process.env.KIS_ACCOUNT_NUMBER!;
   const accessToken  = await getAccessToken();
 
   const [acntNo, acntPrdtCd] = accountId.includes('-')

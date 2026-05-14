@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useTradingEngine, type VirtualPosition, type VirtualTrade, type TopSignal } from '../../hooks/useTradingEngine';
+import { useTradingEngine, type VirtualPosition, type VirtualTrade, type TopSignal, type TradingMode, type RealBalance } from '../../hooks/useTradingEngine';
 import './Trading.css';
 
 // ── 포맷 유틸 ─────────────────────────────────────────────────
@@ -19,13 +19,48 @@ function fmtTime(iso: string) {
 }
 
 const REASON_LABEL: Record<string, string> = {
-  SIGNAL_BUY:       '신호 매수',
-  TAKE_PROFIT:      '익절',
-  STOP_LOSS:        '손절',
-  TIME_STOP:        '타임스탑',
-  ENHANCED_PROFIT:  '고수익 익절',
-  MANUAL:           '수동',
+  SIGNAL_BUY:      '신호 매수',
+  TAKE_PROFIT:     '익절',
+  STOP_LOSS:       '손절',
+  TIME_STOP:       '타임스탑',
+  ENHANCED_PROFIT: '고수익 익절',
+  JUPO_EXIT:       '주포 이탈',
+  MARKET_CLOSE:    '장마감',
+  MANUAL:          '수동',
 };
+
+// ── 모드 토글 ─────────────────────────────────────────────────
+
+function ModeToggle({
+  selected,
+  running,
+  onChange,
+}: {
+  selected: TradingMode;
+  running: boolean;
+  onChange: (m: TradingMode) => void;
+}) {
+  return (
+    <div className="td-mode-toggle">
+      <button
+        className={`td-mode-btn ${selected === 'virtual' ? 'active' : ''}`}
+        onClick={() => onChange('virtual')}
+        disabled={running}
+        title="가상 포트폴리오 (1천만원 시뮬레이션)"
+      >
+        가상
+      </button>
+      <button
+        className={`td-mode-btn real ${selected === 'real' ? 'active' : ''}`}
+        onClick={() => onChange('real')}
+        disabled={running}
+        title="실제 KIS 계좌 연동"
+      >
+        실전
+      </button>
+    </div>
+  );
+}
 
 // ── 서브 컴포넌트들 ─────────────────────────────────────────────
 
@@ -101,7 +136,9 @@ function SignalsCard({ signals, count }: { signals: TopSignal[]; count: number }
     <div className="td-card">
       <div className="td-card-title">모니터링 신호 (상위 5 / 총 {count}종목)</div>
       {signals.length === 0 ? (
-        <div className="td-empty">모니터링 중인 종목이 없습니다</div>
+        <div className="td-empty">
+          {count > 0 ? `신호 대기 중 (${count}종목 모니터링)` : '모니터링 중인 종목이 없습니다'}
+        </div>
       ) : (
         <table className="td-signals-table">
           <thead>
@@ -206,17 +243,73 @@ function TradesCard({ trades }: { trades: VirtualTrade[] }) {
   );
 }
 
+// ── 실전 잔고 카드 ────────────────────────────────────────────────
+
+function RealBalanceCard({ realBalance }: { realBalance: RealBalance }) {
+  const totalValue = realBalance.positions.reduce((sum, p) => sum + p.currentValue, 0);
+  return (
+    <div className="td-card" style={{ gridColumn: '1 / -1' }}>
+      <div className="td-card-title">
+        실전 계좌 잔고
+        <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.6 }}>(KIS)</span>
+      </div>
+      <div className="td-portfolio-grid">
+        <div className="td-pf-item">
+          <span className="td-pf-label">주문가능금액</span>
+          <span className="td-pf-value">{fmtKRW(realBalance.availableCash)}</span>
+        </div>
+        <div className="td-pf-item">
+          <span className="td-pf-label">보유종목 평가액</span>
+          <span className="td-pf-value neutral">{fmtKRW(totalValue)}</span>
+        </div>
+        <div className="td-pf-item">
+          <span className="td-pf-label">총 자산 (추정)</span>
+          <span className="td-pf-value">{fmtKRW(realBalance.availableCash + totalValue)}</span>
+        </div>
+        <div className="td-pf-item">
+          <span className="td-pf-label">보유 종목 수</span>
+          <span className="td-pf-value neutral">{realBalance.positions.length}종목</span>
+        </div>
+      </div>
+      {realBalance.positions.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 11, color: 'var(--text)', fontWeight: 600, marginBottom: 2 }}>보유 종목</div>
+          {realBalance.positions.map((p) => (
+            <div key={p.code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', borderBottom: '1px solid color-mix(in srgb, var(--border) 50%, transparent)' }}>
+              <span style={{ color: 'var(--text-h)', fontWeight: 600 }}>
+                {p.name} <span style={{ color: 'var(--text)', fontWeight: 400 }}>{p.code}</span>
+              </span>
+              <span style={{ color: 'var(--text-h)', fontVariantNumeric: 'tabular-nums' }}>
+                {p.quantity}주 · {p.avgPrice.toLocaleString()}원
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 메인 페이지 ───────────────────────────────────────────────
 
 export default function TradingPage() {
-  const { status, trades, isConnected, halted, actionLoading, start, stop, reset } =
-    useTradingEngine();
+  const {
+    status, trades, isConnected, halted, actionLoading,
+    selectedMode, handleModeChange,
+    realBalance, fetchRealBalance,
+    start, stop, reset,
+  } = useTradingEngine();
 
-  const pf       = status?.portfolio;
-  const running  = status?.isRunning ?? false;
-  const winRate  = pf && pf.totalTrades > 0
+  const pf          = status?.portfolio;
+  const running     = status?.isRunning ?? false;
+  const currentMode = status?.mode ?? selectedMode;
+  const isReal      = currentMode === 'real';
+  const winRate     = pf && pf.totalTrades > 0
     ? ((pf.winTrades / pf.totalTrades) * 100).toFixed(1)
     : '—';
+  const dailyPnLRate = pf && pf.initialBalance > 0
+    ? (pf.dailyPnL / pf.initialBalance) * 100
+    : 0;
 
   return (
     <div className="td-root">
@@ -227,6 +320,11 @@ export default function TradingPage() {
         <h1 className="td-title">
           {running && <span className="td-running-dot" />}
           자동매매 대시보드
+          {running && (
+            <span className={`td-mode-badge ${isReal ? 'real' : 'virtual'}`}>
+              {isReal ? '실전' : '가상'}
+            </span>
+          )}
         </h1>
 
         <div className="td-conn-badge">
@@ -235,9 +333,18 @@ export default function TradingPage() {
         </div>
 
         <div className="td-controls">
+          {/* 시작 전: 모드 선택 토글 표시 */}
+          {!running && (
+            <ModeToggle
+              selected={selectedMode}
+              running={running}
+              onChange={handleModeChange}
+            />
+          )}
+
           <button
             className="td-btn start"
-            onClick={start}
+            onClick={() => start(selectedMode)}
             disabled={running || actionLoading}
           >
             시작
@@ -249,15 +356,24 @@ export default function TradingPage() {
           >
             중지
           </button>
-          <button
-            className="td-btn reset"
-            onClick={reset}
-            disabled={actionLoading}
-          >
-            초기화
-          </button>
+          {!isReal && (
+            <button
+              className="td-btn reset"
+              onClick={reset}
+              disabled={running || actionLoading}
+            >
+              초기화
+            </button>
+          )}
         </div>
       </header>
+
+      {/* ── 실전 모드 경고 배너 ──────────────────────────────── */}
+      {running && isReal && (
+        <div className="td-banner real-mode">
+          ⚡ 실전 모드 — 실제 KIS 계좌에서 주문이 실행됩니다. 일간 손익 ±5% 한도 자동 적용 중.
+        </div>
+      )}
 
       {/* ── 본문 ─────────────────────────────────────────────── */}
       <main className="td-body">
@@ -265,15 +381,34 @@ export default function TradingPage() {
         {/* 중단 알림 */}
         {halted && (
           <div className="td-banner halted">
-            ⚠ 금일 손실 발생으로 자동매매가 중단되었습니다.
-            (금일 손익: {fmtKRW(halted.dailyPnL)}) — 초기화 또는 내일 다시 시작하세요.
+            {halted.reason === 'DAILY_PROFIT'
+              ? `✅ 금일 수익 목표(+5%) 달성으로 자동매매가 중단되었습니다. (금일 손익: +${fmtKRW(halted.dailyPnL)})`
+              : `⚠ 금일 손실 한도(-5%) 도달로 자동매매가 중단되었습니다. (금일 손익: ${fmtKRW(halted.dailyPnL)})`
+            }
+          </div>
+        )}
+
+        {/* 실전 계좌 잔고 카드 */}
+        {selectedMode === 'real' && realBalance && (
+          <div className="td-top-row" style={{ gridTemplateColumns: '1fr' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+              <button className="td-btn reset" style={{ fontSize: 11, padding: '3px 10px' }} onClick={fetchRealBalance}>
+                잔고 갱신
+              </button>
+            </div>
+            <RealBalanceCard realBalance={realBalance} />
           </div>
         )}
 
         {/* 포트폴리오 + 포지션 */}
         <div className="td-top-row">
           <div className="td-card">
-            <div className="td-card-title">포트폴리오</div>
+            <div className="td-card-title">
+              포트폴리오
+              <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.6 }}>
+                {isReal ? '(실전)' : '(가상)'}
+              </span>
+            </div>
             {pf ? (
               <div className="td-portfolio-grid">
                 <div className="td-pf-item">
@@ -284,6 +419,9 @@ export default function TradingPage() {
                   <span className="td-pf-label">금일 손익</span>
                   <span className={`td-pf-value ${pf.dailyPnL > 0 ? 'pos' : pf.dailyPnL < 0 ? 'neg' : 'neutral'}`}>
                     {pf.dailyPnL > 0 ? '+' : ''}{fmtKRW(pf.dailyPnL)}
+                    <span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>
+                      ({fmtPct(dailyPnLRate)})
+                    </span>
                   </span>
                 </div>
                 <div className="td-pf-item">
@@ -291,7 +429,7 @@ export default function TradingPage() {
                   <span className="td-pf-value">{pf.totalTrades}회 / {winRate}%</span>
                 </div>
                 <div className="td-pf-item">
-                  <span className="td-pf-label">초기 자본</span>
+                  <span className="td-pf-label">{isReal ? '시작 잔고' : '초기 자본'}</span>
                   <span className="td-pf-value neutral">{fmtKRW(pf.initialBalance)}</span>
                 </div>
               </div>

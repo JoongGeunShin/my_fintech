@@ -59,8 +59,44 @@
 
 .td-controls {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
+
+/* ── 모드 토글 ───────────────────────────────────────────── */
+.td-mode-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.td-mode-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  transition: background .15s;
+}
+.td-mode-btn:disabled { opacity: .38; cursor: default; }
+.td-mode-btn.active   { background: var(--accent-bg); color: var(--accent); }
+.td-mode-btn.real.active { background: rgba(239,68,68,.15); color: #ef4444; }
+.td-mode-btn:not(:disabled):hover { background: var(--accent-bg); }
+
+/* ── 모드 배지 (헤더 타이틀 옆) ─────────────────────────── */
+.td-mode-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.td-mode-badge.virtual { background: rgba(34,197,94,.15);  color: #22c55e; }
+.td-mode-badge.real    { background: rgba(239,68,68,.15);  color: #ef4444; }
 
 .td-btn {
   padding: 6px 14px;
@@ -101,6 +137,11 @@
   font-size: 13px;
   font-weight: 600;
   border: 1px solid;
+}
+.td-banner.real-mode {
+  background: rgba(239,68,68,.08);
+  border-color: rgba(239,68,68,.3);
+  color: #ef4444;
 }
 .td-banner.halted {
   background: rgba(239,68,68,.1);
