@@ -1,141 +1,175 @@
-// 장전 동시호가 타임 종목 필터링 서비스
-// 동작 순서: 8:40 스크리닝 → 8:50 스크리닝 → 8:57 허수 주문 필터 → 9:00 엔진에 전달
-import { runFullScreening } from './screeningPipelineService.js';
+// 장전 동시호가 타임 종목 필터링 서비스 (KIS API 기반)
+// 동작 순서: 8:40 KIS 스크리닝 → 8:50 WebSocket 검증 → 8:57 허수 주문 제거 → 9:00 슬롯 반환
 import type { PreMarketStock } from '../../types/strategy/types.js';
+import {
+  fetchPrevDayVolumes,
+  getKisPreMarketCandidates,
+} from '../kis/kisScreeningService.js';
 import { quantMetricsService } from '../strategy/quantMetricsService.js';
 
-// 허수 주문 판단 기준
-// BOR 분산이 이 임계값 이상이면 허수 주문 가능성으로 제외
+// 허수 주문 판단 기준 (BOR 분산이 이 값 이상이면 허수 주문 가능성)
 const BOR_VARIANCE_THRESHOLD = 0.12;
 
-// 동시호가 기간 중 모니터링할 최대 종목 수 (WebSocket 슬롯 한계)
-const MAX_PRE_MARKET_WATCH = 15;
+// 장전 WebSocket 모니터링 상한
+// 실전 20종목 / 모의 10종목 가능하나 9:00 이후 엔진 구독 여유 확보를 위해 8개로 제한
+const MAX_PRE_MARKET_WATCH = 8;
 
 class PreMarketFilterService {
-  private snapshot840Codes = new Set<string>();  // 8:40 스크리닝 통과 코드
+  private snapshot840Codes = new Map<string, { name: string; price: number; changeRate: number }>();
+  private prevDayVolumeMap = new Map<string, number>();
   private filteredList: PreMarketStock[] = [];
-  private isWatching = false; // 장전 WebSocket 모니터링 중 여부
+  private watchedCodes  = new Set<string>();
+  private isWatching    = false;
 
-  // ── 8:40 실행: 1차 후보군 확보 및 WebSocket 모니터링 시작 ─────
+  // ── 8:40 실행: KIS 거래량 순위 기반 1차 후보 확보 + WebSocket 모니터링 시작 ──
 
   async runAt840(): Promise<void> {
-    console.log('[PreMarket] 8:40 스크리닝 시작');
+    console.log('[PreMarket] 8:40 KIS 스크리닝 시작');
     try {
-      const result = await runFullScreening();
-
-      // 조건검색 통과 종목 + my_fintech 레벨 2 이상 종목 수집
-      const conditionStocks = result.byGroup['조건'] ?? [];
-      const levelStocks     = result.byLevel[3] ?? result.byLevel[2] ?? result.byLevel[1] ?? [];
-
-      const uniqueCodes = new Set<string>();
-      const allCandidates = [...conditionStocks, ...levelStocks];
-      for (const s of allCandidates) uniqueCodes.add(s.code);
-
-      this.snapshot840Codes = uniqueCodes;
-
-      // 상위 MAX_PRE_MARKET_WATCH개 종목을 WebSocket 구독 시작
-      // (kisWebSocketService가 H0STBSP0 시간외 호가도 자동 구독하므로 장전 데이터 수신됨)
-      const watchList = allCandidates.slice(0, MAX_PRE_MARKET_WATCH);
-      for (const s of watchList) {
-        quantMetricsService.subscribe(s.code, s.name);
+      const candidates = await getKisPreMarketCandidates();
+      if (candidates.length === 0) {
+        console.warn('[PreMarket] 8:40 후보 없음 — KIS API 장전 데이터 미제공 가능성');
+        return;
       }
 
-      console.log(`[PreMarket] 8:40 후보: ${uniqueCodes.size}개 | 모니터링 시작: ${watchList.length}개`);
+      // 상위 MAX_PRE_MARKET_WATCH개만 모니터링 (WebSocket 슬롯 보호)
+      const watchList = candidates.slice(0, MAX_PRE_MARKET_WATCH);
+
+      this.snapshot840Codes.clear();
+      for (const c of candidates) {
+        this.snapshot840Codes.set(c.code, { name: c.name, price: c.price, changeRate: c.changeRate });
+      }
+
+      // 전일 거래량 조회 (volumeRatio 계산용)
+      const codes = watchList.map((c) => c.code);
+      this.prevDayVolumeMap = await fetchPrevDayVolumes(codes);
+
+      // WebSocket 구독 시작
+      for (const c of watchList) {
+        if (!this.watchedCodes.has(c.code)) {
+          quantMetricsService.subscribe(c.code, c.name);
+          this.watchedCodes.add(c.code);
+        }
+      }
+      this.isWatching = true;
+
+      console.log(
+        `[PreMarket] 8:40 완료: 후보 ${candidates.length}개 | 모니터링 시작 ${watchList.length}개` +
+        ` | 전일거래량 조회 ${this.prevDayVolumeMap.size}개`
+      );
     } catch (err) {
-      console.error('[PreMarket] 8:40 스크리닝 실패:', err instanceof Error ? err.message : err);
+      console.error('[PreMarket] 8:40 실패:', err instanceof Error ? err.message : err);
     }
   }
 
-  // ── 8:50 실행: 메인 스크리닝 및 거래량 비율 검증 ──────────────
+  // ── 8:50 실행: 재스크리닝 + 8:40 교집합 + WebSocket 상태 검증 ──
 
   async runAt850(): Promise<void> {
-    console.log('[PreMarket] 8:50 스크리닝 시작');
+    console.log('[PreMarket] 8:50 KIS 스크리닝 시작');
     try {
-      const result = await runFullScreening();
+      const candidates = await getKisPreMarketCandidates();
 
-      const conditionStocks = result.byGroup['조건'] ?? [];
-      const levelStocks3    = result.byLevel[3] ?? [];
-      const levelStocks2    = result.byLevel[2] ?? [];
+      // 8:40과 8:50 양쪽 통과 종목 = 지속적 모멘텀 확인
+      // 8:40 데이터 없으면(API 실패 등) 8:50 결과만 사용
+      const crossChecked = this.snapshot840Codes.size > 0
+        ? candidates.filter((c) => this.snapshot840Codes.has(c.code))
+        : candidates.slice(0, MAX_PRE_MARKET_WATCH);
 
-      // 8:40과 8:50 양쪽 스크리닝 통과 종목 = 더 신뢰할 수 있는 후보
-      // (8:40 목록이 없으면 8:50 결과만 사용)
-      const allStocks  = [...conditionStocks, ...levelStocks3, ...levelStocks2];
-      const candidates = this.snapshot840Codes.size > 0
-        ? allStocks.filter((s) => this.snapshot840Codes.has(s.code))
-        : allStocks;
+      if (crossChecked.length === 0) {
+        console.warn('[PreMarket] 8:50 교집합 없음 — 장전 모멘텀 종목 소멸 또는 API 오류');
+        return;
+      }
+
+      // 8:50 시점에서 아직 구독 안 된 교집합 종목은 구독 추가
+      for (const c of crossChecked) {
+        if (!this.watchedCodes.has(c.code)) {
+          quantMetricsService.subscribe(c.code, c.name);
+          this.watchedCodes.add(c.code);
+        }
+      }
 
       const preMarketList: PreMarketStock[] = [];
 
-      for (const stock of candidates) {
-        const state = quantMetricsService.getState(stock.code);
+      for (const c of crossChecked) {
+        const state = quantMetricsService.getState(c.code);
 
-        // WebSocket 데이터 수신 확인 (stock.price는 string)
-        const currentPrice  = state?.currentPrice ?? (parseInt(stock.price, 10) || 0);
-        const borAtSnapshot = state?.bor ?? 1.0;
+        const expectedOpenPrice = state?.currentPrice && state.currentPrice > 0
+          ? state.currentPrice
+          : c.price;
+
+        const borAtSnapshot = state?.bor        ?? 1.0;
         const borVariance   = state?.borVariance ?? 0;
 
-        // tradeVolume은 efriend 스크리닝에서 받은 string → 숫자 변환
-        const prevDayVolume   = parseInt(stock.tradeVolume, 10) || 1;
-        const preMarketVolume = parseInt(stock.tradeVolume, 10) || 0;
-        const volumeRatio     = prevDayVolume > 0 ? preMarketVolume / prevDayVolume : 0;
+        // WebSocket에서 수신된 누적 거래량 사용 (없으면 API 값)
+        const preMarketVolume = state?.accVolume && state.accVolume > 0
+          ? state.accVolume
+          : c.volume;
+
+        const prevDayVolume = this.prevDayVolumeMap.get(c.code) ?? 0;
+        const volumeRatio   = prevDayVolume > 0 ? preMarketVolume / prevDayVolume : 0;
 
         preMarketList.push({
-          code:              stock.code,
-          name:              stock.name,
+          code:              c.code,
+          name:              c.name,
           preMarketVolume,
           prevDayVolume,
           volumeRatio,
-          expectedOpenPrice: currentPrice,
+          expectedOpenPrice,
           borAtSnapshot,
           borVariance,
-          isReliable:        true, // 8:57 허수 필터에서 최종 판단
-          selectedAt:        new Date(),
+          isReliable: true, // 8:57 허수 필터에서 최종 판단
+          selectedAt:  new Date(),
         });
       }
 
-      // 임시 저장 (8:57 필터 전 단계)
       this.filteredList = preMarketList;
-      console.log(`[PreMarket] 8:50 후보 확정: ${preMarketList.length}개`);
+      console.log(`[PreMarket] 8:50 후보 확정: ${preMarketList.length}개 (8:40 교집합)`);
+
+      for (const s of preMarketList) {
+        const ratioStr = s.volumeRatio > 0 ? `VRatio: ${s.volumeRatio.toFixed(2)}x` : 'VRatio: N/A';
+        console.log(
+          `[PreMarket]   ${s.name}(${s.code})` +
+          ` | 예상시가: ${s.expectedOpenPrice.toLocaleString()}원` +
+          ` | BOR: ${s.borAtSnapshot.toFixed(2)} | ${ratioStr}`
+        );
+      }
     } catch (err) {
-      console.error('[PreMarket] 8:50 스크리닝 실패:', err instanceof Error ? err.message : err);
+      console.error('[PreMarket] 8:50 실패:', err instanceof Error ? err.message : err);
     }
   }
 
-  // ── 8:57 실행: 허수 주문 필터링 ──────────────────────────────
+  // ── 8:57 실행: BOR 변동성 기반 허수 주문 제거 ──────────────────
   //
-  // 허수 주문 패턴:
-  //   ① 8:58~8:59 직전 BOR이 급격히 변동 (세력이 대량 주문 후 취소)
-  //   ② BOR 분산이 높은 종목 = 호가창에 넣었다 빼는 허수 주문 가능성
-  //   → borVariance >= BOR_VARIANCE_THRESHOLD 이면 제외
+  // 8:58~8:59 직전 세력이 대량 주문을 넣었다 빼는 허수 주문 집중 시점.
+  // BOR 분산이 높은 종목 = 호가창이 불안정 → 제외
 
   runAt857(): void {
     console.log('[PreMarket] 8:57 허수 주문 필터링 시작');
-
     const before = this.filteredList.length;
 
-    this.filteredList = this.filteredList.map((stock) => {
-      const state = quantMetricsService.getState(stock.code);
-      if (!state) return { ...stock, isReliable: false };
+    this.filteredList = this.filteredList
+      .map((stock) => {
+        const state = quantMetricsService.getState(stock.code);
+        if (!state) return { ...stock, isReliable: false };
 
-      // BOR 변동성 체크 (허수 주문 = BOR이 급격히 흔들림)
-      const borVariance = state.borVariance;
-      const isReliable  = borVariance < BOR_VARIANCE_THRESHOLD;
+        const borVariance = state.borVariance;
+        const isReliable  = borVariance < BOR_VARIANCE_THRESHOLD;
 
-      return {
-        ...stock,
-        borAtSnapshot: state.bor,
-        borVariance,
-        expectedOpenPrice: state.currentPrice || stock.expectedOpenPrice,
-        isReliable,
-      };
-    }).filter((s) => s.isReliable);
+        return {
+          ...stock,
+          borAtSnapshot:     state.bor,
+          borVariance,
+          expectedOpenPrice: state.currentPrice || stock.expectedOpenPrice,
+          isReliable,
+        };
+      })
+      .filter((s) => s.isReliable);
 
     console.log(
-      `[PreMarket] 8:57 허수 필터 결과: ${before}개 → ${this.filteredList.length}개` +
+      `[PreMarket] 8:57 허수 필터: ${before}개 → ${this.filteredList.length}개` +
       ` (${before - this.filteredList.length}개 제거)`
     );
 
-    // 최종 리스트 로그
     for (const s of this.filteredList) {
       console.log(
         `[PreMarket] ✅ ${s.name}(${s.code})` +
@@ -159,13 +193,26 @@ class PreMarketFilterService {
     return this.filteredList.length > 0;
   }
 
-  // ── 장 시작 후 정리 ───────────────────────────────────────────
+  // ── 9:00 실행: 장전 WebSocket 구독 해제 → KIS 슬롯 반환 ────────
+  // filteredList는 유지 — 엔진이 OPENING/EARLY_MORNING 구간에서 읽음
 
   clearPreMarketSubscriptions(): void {
     if (!this.isWatching) return;
-    this.isWatching = false;
+
+    let cleared = 0;
+    for (const code of this.watchedCodes) {
+      quantMetricsService.unsubscribe(code);
+      cleared++;
+    }
+    this.watchedCodes.clear();
     this.snapshot840Codes.clear();
-    console.log('[PreMarket] 장전 구독 정리 완료');
+    this.prevDayVolumeMap.clear();
+    this.isWatching = false;
+
+    console.log(
+      `[PreMarket] 장전 구독 정리 완료 (${cleared}개 해제 → 슬롯 반환)` +
+      ` | 필터 목록 ${this.filteredList.length}개 유지 (엔진 인계)`
+    );
   }
 }
 

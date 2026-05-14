@@ -23,6 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.local
+.env.*.local
+server/.env
+server/.env.local
+server/docs
 server/strategy/intraday_quant_strategy.md
 server/strategy/trading_system_strategy.txt
 .claude/settings.local.json

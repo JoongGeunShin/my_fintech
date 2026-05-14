@@ -8,11 +8,15 @@ import { kisWebSocketService } from '../kis/kisWebSocketService.js';
 import { calcATR, getMinuteBars } from '../kis/minuteChartService.js';
 import { memCache } from '../../utils/cache.js';
 
-const TIS_WINDOW      = 100; // TIS 계산 최근 틱 수
-const ES_WINDOW       = 50;  // 체결강도 롤링 윈도우
-const WALL_MULTIPLIER = 3;   // 평균 대비 N배 이상 → 벽 판정
-const PRICE_HISTORY   = 5;   // 단기 가격 추세 참조 틱 수
-const BOR_HISTORY     = 10;  // BOR 변동성 추적 기록 수
+const TIS_WINDOW         = 100;   // TIS 계산 최근 틱 수
+const ES_WINDOW          = 50;    // 체결강도 롤링 윈도우
+const WALL_MULTIPLIER    = 3;     // 평균 대비 N배 이상 → 벽 판정
+const PRICE_HISTORY      = 5;     // 단기 가격 추세 참조 틱 수
+const BOR_HISTORY        = 10;    // BOR 변동성 추적 기록 수
+const WALL_SIGNAL_HOLD_MS = 3_000; // 벽 소멸 신호를 3초간 유지 (1초 사이클 미스 방지)
+// 분봉 평균 거래량 최소 기준: 이 미만이면 저유동성 종목으로 판단해 진입 차단
+// 3,000주/분 ≈ 일평균 ~117만주 이상 (장 중 지속 유동성 확인용)
+const MIN_AVG_MINUTE_VOL = 3_000;
 
 type SignalListener = (state: StockQuantState) => void;
 
@@ -23,12 +27,20 @@ class QuantMetricsService {
   private tradeCallbacks = new Map<string, (d: RealtimeTrade) => void>();
   private signalListeners: SignalListener[] = [];
 
+  // 날짜 변경 감지 (VWAP·CVD 당일 리셋용)
+  private lastTradeDays = new Map<string, string>(); // code → 'YYYY-MM-DD'
+
+  // 벽 소멸 신호 유지 타임스탬프 (호가 업데이트 빠를 때 1초 사이클 미스 방지)
+  private wallAbsorbedAskUntil = new Map<string, number>(); // code → ms timestamp
+  private wallAbsorbedBidUntil = new Map<string, number>();
+
   // ── 구독 관리 ──────────────────────────────────────────────
 
   subscribe(code: string, name: string): void {
     if (this.states.has(code)) return;
 
     this._initState(code, name);
+    this.lastTradeDays.set(code, new Date().toISOString().slice(0, 10));
 
     const obCb    = (d: RealtimeOrderBook) => this._onOrderBook(d);
     const tradeCb = (d: RealtimeTrade)     => this._onTrade(d);
@@ -58,6 +70,9 @@ class QuantMetricsService {
 
     this.states.delete(code);
     this.tisBuffers.delete(code);
+    this.lastTradeDays.delete(code);
+    this.wallAbsorbedAskUntil.delete(code);
+    this.wallAbsorbedBidUntil.delete(code);
     console.log(`[Quant] 구독 해제: ${code}`);
   }
 
@@ -94,6 +109,7 @@ class QuantMetricsService {
       borHistory: [], borVariance: 0,
       currentMinute: '', currentMinuteVolume: 0,
       minuteVolumeHistory: [], vrate: 1.0, vrateReliable: false,
+      avgMinuteVolume: 0, isLowLiquidity: false,
       currentPrice: 0, openPrice: 0, highPrice: 0, lowPrice: 0, accVolume: 0,
       priceHistory: [], priceTrend: 'flat',
       cvdDivergence: false,
@@ -148,9 +164,16 @@ class QuantMetricsService {
     s.hasWallAsk = data.askVolumes.some((v) => v > wallThreshold);
     s.hasWallBid = data.bidVolumes.some((v) => v > wallThreshold);
 
-    // 벽 소멸 감지 (단일 사이클 플래그)
-    s.wallAbsorbedAsk = prevWallAsk && !s.hasWallAsk;
-    s.wallAbsorbedBid = prevWallBid && !s.hasWallBid;
+    // 벽 소멸 감지 — WALL_SIGNAL_HOLD_MS 동안 신호 유지 (호가가 사이클보다 빨라도 미스 없음)
+    const nowMs = Date.now();
+    if (prevWallAsk && !s.hasWallAsk) {
+      this.wallAbsorbedAskUntil.set(data.code, nowMs + WALL_SIGNAL_HOLD_MS);
+    }
+    if (prevWallBid && !s.hasWallBid) {
+      this.wallAbsorbedBidUntil.set(data.code, nowMs + WALL_SIGNAL_HOLD_MS);
+    }
+    s.wallAbsorbedAsk = (this.wallAbsorbedAskUntil.get(data.code) ?? 0) > nowMs;
+    s.wallAbsorbedBid = (this.wallAbsorbedBidUntil.get(data.code) ?? 0) > nowMs;
 
     // 근접 호가 잔량 (1~3호가 합산 — 실제 매수/매도 가능 물량)
     s.nearAskDepth = data.askVolumes.slice(0, 3).reduce((a, v) => a + v, 0);
@@ -173,6 +196,23 @@ class QuantMetricsService {
   private _onTrade(data: RealtimeTrade): void {
     const s = this.states.get(data.code);
     if (!s) return;
+
+    // 날짜 바뀌면 당일 누적값 리셋 (VWAP·CVD·분봉 히스토리)
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.lastTradeDays.get(data.code) !== today) {
+      this.lastTradeDays.set(data.code, today);
+      s.vwapNumerator      = 0;
+      s.vwapDenominator    = 0;
+      s.vwap               = 0;
+      s.cvd                = 0;
+      s.cvdPrev            = 0;
+      s.minuteVolumeHistory = [];
+      s.vrateReliable      = false;
+      s.accVolume          = 0;
+      this.wallAbsorbedAskUntil.delete(data.code);
+      this.wallAbsorbedBidUntil.delete(data.code);
+      console.log(`[Quant] ${s.name}(${data.code}) 당일 누적값 리셋`);
+    }
 
     const price  = data.tradePrice;
     const volume = data.tradeVolume;
@@ -233,8 +273,10 @@ class QuantMetricsService {
     if (s.vrateReliable) {
       const avgMinVol = s.minuteVolumeHistory.reduce((a, v) => a + v, 0) / s.minuteVolumeHistory.length;
       s.vrate = avgMinVol > 0 ? s.currentMinuteVolume / avgMinVol : 1.0;
+      s.avgMinuteVolume = avgMinVol;
     } else {
       s.vrate = 1.0;
+      s.avgMinuteVolume = 0;
     }
 
     // 단기 가격 추세 (최근 5 체결 기준)
@@ -305,7 +347,15 @@ class QuantMetricsService {
     if (s.wallAbsorbedAsk && s.score > 0.2) s.score = Math.min(s.score * 1.3, 1);
     if (s.wallAbsorbedBid && s.score < -0.2) s.score = Math.max(s.score * 1.3, -1);
 
-    // 6. 매매 신호 판정
+    // 6. 저유동성 필터: 분봉 평균 거래량 기준 미달 시 진입 차단
+    // vrateReliable(3분 이상 데이터) 이후부터 적용, 그 전에는 패스
+    s.isLowLiquidity = s.vrateReliable && s.avgMinuteVolume < MIN_AVG_MINUTE_VOL;
+    if (s.isLowLiquidity) {
+      s.signal = 'HOLD';
+      return;
+    }
+
+    // 7. 매매 신호 판정
     const vrateOK = !s.vrateReliable || s.vrate > 1.5;
     // 체결강도 60% 이상 OR 매도벽 소멸(즉각 진입)
     const esOK = s.executionStrength > 60 || s.wallAbsorbedAsk;

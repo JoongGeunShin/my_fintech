@@ -40,19 +40,19 @@ export interface RealtimeTrade {
   isAfterHours?: boolean;    // 시간외 여부
 }
 
-// ── 구독 TR ID 상수 (통합 — 정규 + 시간외 동시 구독으로 전 시간대 커버) ──
-// 체결가: H0STCNT0(정규) + H0STBCNT(시간외) 동시 구독
-// 호가:   H0STASP0(정규) + H0STBSP0(시간외) 동시 구독
-// → 장 시작 동시호가(08:30) / 정규장(09:00~15:30) /
-//   장후 시간외 종가(15:40~16:00) / 시간외 단일가(16:00~18:00) 전 구간 대응
+// ── 구독 TR ID 상수 ──────────────────────────────────────────
+// H0STCNT0/H0STASP0: 정규장 + 동시호가(08:30~15:30)
+// H0STBCNT/H0STBSP0: 장전 단일가(~08:30) / 장후 시간외(15:40~18:00)
+// kisWebSocketService 는 현재 시각을 보고 둘 중 하나만 구독하여
+// 모의투자 한도(20 TR/연결)를 초과하지 않도록 한다.
 const TR_TRADE = {
-  REGULAR: 'H0STCNT0',  // 국내주식 실시간 체결가     (정규장 + 동시호가)
-  AFTER:   'H0STBCNT',  // 국내주식 시간외 실시간 체결가 (장전/장후/단일가)
+  REGULAR: 'H0STCNT0',
+  AFTER:   'H0STBCNT',
 } as const;
 
 const TR_ORDERBOOK = {
-  REGULAR: 'H0STASP0',  // 국내주식 실시간 호가       (정규장)
-  AFTER:   'H0STBSP0',  // 국내주식 시간외 실시간 호가  (시간외)
+  REGULAR: 'H0STASP0',
+  AFTER:   'H0STBSP0',
 } as const;
 
 type TrId =
@@ -74,12 +74,11 @@ class KisWebSocketService {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isShuttingDown = false;
 
-  // 구독 중인 종목 추적 (재연결 시 재구독)
-  // 각 code가 Set에 있으면 정규 + 시간외 TR 양쪽 모두 구독 중을 의미
-  private orderBookSubs = new Set<string>();
-  private tradeSubs     = new Set<string>();
+  // 구독 중인 종목 추적: code → 실제 구독된 TR ID (재연결 시 재구독)
+  private orderBookSubsTr = new Map<string, TrId>();
+  private tradeSubsTr     = new Map<string, TrId>();
 
-  // 콜백 레지스트리 (장중 + 시간외 동일 콜백 공유)
+  // 콜백 레지스트리
   private orderBookCallbacks = new Map<string, Set<OrderBookCallback>>();
   private tradeCallbacks     = new Map<string, Set<TradeCallback>>();
 
@@ -129,43 +128,46 @@ class KisWebSocketService {
   }
 
   // ── 구독 / 해제 ───────────────────────────────────────────
-  // 장중 + 시간외 TR을 동시에 구독하여 어느 시간대든 데이터 수신
+  // 현재 시각에 맞는 TR 하나만 구독하여 모의투자 한도(20 TR)를 준수한다.
+  // 08:30~15:30: 정규 TR / 그 외: 시간외 TR
 
-  // 호가 구독 — 정규(H0STASP0) + 시간외(H0STBSP0) 동시 구독으로 전 시간대 커버
   subscribeOrderBook(code: string, cb: OrderBookCallback): void {
     this._addCallback(this.orderBookCallbacks, code, cb);
-    if (!this.orderBookSubs.has(code)) {
-      this.orderBookSubs.add(code);
-      this._sendSubscribe(TR_ORDERBOOK.REGULAR, code);
-      this._sendSubscribe(TR_ORDERBOOK.AFTER,   code);
+    if (!this.orderBookSubsTr.has(code)) {
+      const tr = this._orderBookTr();
+      this.orderBookSubsTr.set(code, tr);
+      this._sendSubscribe(tr, code);
     }
   }
 
   unsubscribeOrderBook(code: string, cb: OrderBookCallback): void {
     this._removeCallback(this.orderBookCallbacks, code, cb);
     if (!this.orderBookCallbacks.has(code)) {
-      this.orderBookSubs.delete(code);
-      this._sendUnsubscribe(TR_ORDERBOOK.REGULAR, code);
-      this._sendUnsubscribe(TR_ORDERBOOK.AFTER,   code);
+      const tr = this.orderBookSubsTr.get(code);
+      if (tr) {
+        this.orderBookSubsTr.delete(code);
+        this._sendUnsubscribe(tr, code);
+      }
     }
   }
 
-  // 체결 구독 — 정규(H0STCNT0) + 시간외(H0STBCNT) 동시 구독으로 전 시간대 커버
   subscribeTrade(code: string, cb: TradeCallback): void {
     this._addCallback(this.tradeCallbacks, code, cb);
-    if (!this.tradeSubs.has(code)) {
-      this.tradeSubs.add(code);
-      this._sendSubscribe(TR_TRADE.REGULAR, code);
-      this._sendSubscribe(TR_TRADE.AFTER,   code);
+    if (!this.tradeSubsTr.has(code)) {
+      const tr = this._tradeTr();
+      this.tradeSubsTr.set(code, tr);
+      this._sendSubscribe(tr, code);
     }
   }
 
   unsubscribeTrade(code: string, cb: TradeCallback): void {
     this._removeCallback(this.tradeCallbacks, code, cb);
     if (!this.tradeCallbacks.has(code)) {
-      this.tradeSubs.delete(code);
-      this._sendUnsubscribe(TR_TRADE.REGULAR, code);
-      this._sendUnsubscribe(TR_TRADE.AFTER,   code);
+      const tr = this.tradeSubsTr.get(code);
+      if (tr) {
+        this.tradeSubsTr.delete(code);
+        this._sendUnsubscribe(tr, code);
+      }
     }
   }
 
@@ -223,14 +225,27 @@ class KisWebSocketService {
   }
 
   private _resubscribeAll(): void {
-    for (const code of this.orderBookSubs) {
-      this._sendSubscribe(TR_ORDERBOOK.REGULAR, code);
-      this._sendSubscribe(TR_ORDERBOOK.AFTER,   code);
+    for (const [code, tr] of this.orderBookSubsTr) {
+      this._sendSubscribe(tr, code);
     }
-    for (const code of this.tradeSubs) {
-      this._sendSubscribe(TR_TRADE.REGULAR, code);
-      this._sendSubscribe(TR_TRADE.AFTER,   code);
+    for (const [code, tr] of this.tradeSubsTr) {
+      this._sendSubscribe(tr, code);
     }
+  }
+
+  // 동시호가(08:30) 포함 정규장(08:30~15:30) 여부
+  private _isRegularOrSimultaneous(): boolean {
+    const now = new Date();
+    const m = now.getHours() * 60 + now.getMinutes();
+    return m >= 510 && m < 930;
+  }
+
+  private _orderBookTr(): TrId {
+    return this._isRegularOrSimultaneous() ? TR_ORDERBOOK.REGULAR : TR_ORDERBOOK.AFTER;
+  }
+
+  private _tradeTr(): TrId {
+    return this._isRegularOrSimultaneous() ? TR_TRADE.REGULAR : TR_TRADE.AFTER;
   }
 
   private _scheduleReconnect(): void {

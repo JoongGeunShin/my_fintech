@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"E:\\\\React\\\\projects\\\\my_fintech\\\\server\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(not exist *)",
+      "PowerShell(New-Item *)",
+      "Bash(Get-ChildItem -Path \"E:\\\\React\\\\projects\\\\my_fintech\\\\server\\\\src\" -Recurse -Directory)",
+      "Bash(Find \"E:\\\\React\\\\projects\\\\my_fintech\\\\server\" -name \"*.ts\" -not -path \"*/node_modules/*\" -not -path \"*/.git/*\")",
+      "Bash(Get-ChildItem -Path \"E:\\\\React\\\\projects\\\\my_fintech\" -Directory -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(npx tsc *)",
+      "PowerShell(& npx tsc --noEmit --project \"E:\\\\React\\\\projects\\\\my_fintech\\\\tsconfig.app.json\" 2>&1 | Select-Object -First 20)",
+      "PowerShell(& npx tsc --noEmit --project \"E:\\\\React\\\\projects\\\\my_fintech\\\\server\\\\tsconfig.json\" 2>&1 | Select-Object -First 10; & npx tsc --noEmit --project \"E:\\\\React\\\\projects\\\\my_fintech\\\\tsconfig.app.json\" 2>&1 | Select-Object -First 10)",
+      "Bash(dir E:\\\\React\\\\projects\\\\my_fintech\\\\server\\\\docs\\\\조건검색 목록 *)",
+      "PowerShell(Get-ChildItem \"E:\\\\React\\\\projects\\\\my_fintech\\\\server\\\\docs\\\\조건검색 목록\" | ForEach-Object { $_.Name })"
+    ]
+  }
+}

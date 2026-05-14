@@ -19,6 +19,7 @@ export function startScreeningScheduler(): void {
   console.log('[Scheduler] 조건 검색 스케줄러 시작 (5분 간격)');
   _runSafe();
   timer = setInterval(_runSafe, INTERVAL_MS);
+  _scheduleMidnightReset(); // 매일 자정 장전 스케줄 자동 재등록
 }
 
 export function stopScreeningScheduler(): void {
@@ -72,6 +73,12 @@ export function schedulePreMarketRuns(): void {
       hh: 8, mm: 57,
       fn: () => preMarketFilterService.runAt857(),
     },
+    {
+      label: '9:00',
+      hh: 9, mm: 0,
+      // 장 시작: 장전 구독 해제 → KIS WebSocket 슬롯 반환 → 엔진이 재구독
+      fn: () => preMarketFilterService.clearPreMarketSubscriptions(),
+    },
   ];
 
   for (const target of targets) {
@@ -92,6 +99,23 @@ export function schedulePreMarketRuns(): void {
     preMarketTimers.push(t);
     console.log(`[PreMarket] ${target.label} 예약 완료 (${Math.round(delay / 1000)}초 후)`);
   }
+}
+
+// 매일 자정 직후 장전 스케줄을 재등록 (서버가 며칠째 실행 중이어도 매일 동작)
+function _scheduleMidnightReset(): void {
+  const now      = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 10);
+  const delayMs  = tomorrow.getTime() - now.getTime();
+
+  setTimeout(() => {
+    console.log('[Scheduler] 자정 경과 → 장전 스케줄 재등록');
+    for (const t of preMarketTimers) clearTimeout(t);
+    preMarketTimers.length = 0;
+    schedulePreMarketRuns();
+    _scheduleMidnightReset(); // 다음 날도 예약
+  }, delayMs);
+
+  console.log(`[Scheduler] 장전 스케줄 자동 재등록 예약 (${Math.round(delayMs / 1000 / 60)}분 후)`);
 }
 
 async function _runSafe(): Promise<void> {

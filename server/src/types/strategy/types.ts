@@ -46,6 +46,8 @@ export interface StockQuantState {
   minuteVolumeHistory: number[]; // 직전 완료 분봉 거래량들
   vrate: number;
   vrateReliable: boolean;        // 히스토리 충분(≥3) 여부
+  avgMinuteVolume: number;       // 최근 분봉 평균 거래량 (vrateReliable 시 유효)
+  isLowLiquidity: boolean;       // 저유동성 플래그 — 평균 분봉 거래량 기준 미달
 
   // 가격
   currentPrice: number;
@@ -150,11 +152,16 @@ export interface VirtualTrade {
   executedAt: Date;
   realizedPnL?: number;
   pnlRate?: number;
+  fees?: number;   // 수수료 (매수/매도 각각 0.015%)
+  tax?: number;    // 증권거래세 (매도 시 KOSPI 0.15%)
   reason: TradeReason;
 }
 
+export type TradingMode = 'virtual' | 'real';
+
 export interface TradingEngineStatus {
   isRunning: boolean;
+  mode: TradingMode;
   portfolio: VirtualPortfolio;
   position: VirtualPosition | null;
   monitoredStockCount: number;

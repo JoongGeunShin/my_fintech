@@ -5,14 +5,17 @@ import { getOptionalSearchList } from './optionalSearchListService.js';
 
 const MAIN_GROUP = 'my_fintech';
 
-// my_fintech 레벨(최대 3)보다 항상 높은 점수를 부여할 트레이딩 우선 그룹
-const TRADING_PRIORITY_GROUPS = new Set(['조건']);
+// my_fintech 카테고리별 가중치 (필수 > 보조 > 세부)
+const WEIGHT_REQUIRED = 100;
+const WEIGHT_SUPPORT  =  30;
+const WEIGHT_DETAIL   =  10;
 
 // ── 조건 카테고리 ─────────────────────────────────────────────
 type ConditionCategory = 'REQUIRED' | 'SUPPORT' | 'DETAIL' | 'UNKNOWN';
 
 function getCategory(conditionName: string): ConditionCategory {
   if (conditionName.startsWith('[필수]')) return 'REQUIRED';
+  if (conditionName.startsWith('[기본]')) return 'REQUIRED';
   if (conditionName.startsWith('[보조]')) return 'SUPPORT';
   if (conditionName.startsWith('[세부]')) return 'DETAIL';
   return 'UNKNOWN';
@@ -35,26 +38,31 @@ export interface ScreeningResult {
 // ── 캐시 키 ─────────────────────────────────────────────────
 const CACHE_KEY_SCREENING = 'screening:latest';
 
-// ── 레벨 판정 (my_fintech 전용) ──────────────────────────────
-function calcLevel(
+// ── 가중 점수 + 레벨 판정 (my_fintech 전용) ──────────────────
+// score: 필수×100 + 보조×30 + 세부×10 (통과 개수 기반 세분화)
+// level: Firestore 컬렉션 호환용 (1/2/3)
+function calcWeightedScore(
   passedSeqs: Set<number>,
   requiredSeqs: number[],
   supportSeqs: number[],
   detailSeqs: number[]
-): number {
-  const passedAnyRequired =
-    requiredSeqs.length === 0 || requiredSeqs.some((s) => passedSeqs.has(s));
-  if (!passedAnyRequired) return 0;
+): { score: number; level: number } {
+  const passedReqCount = requiredSeqs.filter((s) => passedSeqs.has(s)).length;
+  if (passedReqCount === 0) return { score: 0, level: 0 };
 
-  const passedAnySupport =
-    supportSeqs.length === 0 || supportSeqs.some((s) => passedSeqs.has(s));
-  if (!passedAnySupport) return 1;
+  const passedSupCount = supportSeqs.filter((s) => passedSeqs.has(s)).length;
+  const passedDetCount = detailSeqs.filter((s) => passedSeqs.has(s)).length;
 
-  const passedAnyDetail =
-    detailSeqs.length === 0 || detailSeqs.some((s) => passedSeqs.has(s));
-  if (!passedAnyDetail) return 2;
+  const score =
+    passedReqCount * WEIGHT_REQUIRED +
+    passedSupCount * WEIGHT_SUPPORT  +
+    passedDetCount * WEIGHT_DETAIL;
 
-  return 3;
+  const level =
+    passedDetCount > 0 ? 3 :
+    passedSupCount > 0 ? 2 : 1;
+
+  return { score, level };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -150,13 +158,12 @@ export async function runFullScreening(): Promise<ScreeningResult> {
     const myPassedSeqs = new Set<number>([...passedSeqs].filter((s) => myFintechSeqSet.has(s)));
     if (myPassedSeqs.size === 0) continue;
 
-    const level = calcLevel(myPassedSeqs, requiredSeqs, supportSeqs, detailSeqs);
+    const { score, level } = calcWeightedScore(myPassedSeqs, requiredSeqs, supportSeqs, detailSeqs);
     if (level === 0) continue;
 
     const meta = stockMeta.get(code);
     if (!meta) continue;
 
-    // passedSequenceInfos 구성 (요구사항 4: seq + 이름)
     const passedSequenceInfos = [...myPassedSeqs].map((seq) => ({
       seq,
       conditionName: seqInfoMap.get(seq)?.conditionName ?? `seq${seq}`,
@@ -164,9 +171,9 @@ export async function runFullScreening(): Promise<ScreeningResult> {
 
     const stock: ScreenedStock = {
       ...meta,
-      passedSequences: [...myPassedSeqs],         // 하위 호환
-      passedSequenceInfos,                         // 이름 포함 (신규)
-      score: level,
+      passedSequences: [...myPassedSeqs],
+      passedSequenceInfos,
+      score,  // 가중 점수 (필수×100 + 보조×30 + 세부×10)
       updatedAt: new Date() as unknown as import('firebase-admin/firestore').Timestamp,
     };
 
@@ -195,23 +202,16 @@ export async function runFullScreening(): Promise<ScreeningResult> {
         conditionName: seqInfoMap.get(seq)?.conditionName ?? `seq${seq}`,
       }));
 
-      // 트레이딩 우선 그룹(예: screened_조건)은 my_fintech 레벨(최대 3)보다 높은 점수 부여
-      const groupScore = TRADING_PRIORITY_GROUPS.has(groupName)
-        ? 10 * groupPassedSeqs.size   // 10, 20, 30… (레벨 1~3보다 항상 높음)
-        : groupPassedSeqs.size;
-
       groupStocks.push({
         ...meta,
         passedSequences: [...groupPassedSeqs],
         passedSequenceInfos,
-        score: groupScore,
+        score: groupPassedSeqs.size,  // 통과 조건 수 (단순, 폴백 그룹)
         updatedAt: new Date() as unknown as import('firebase-admin/firestore').Timestamp,
       });
     }
 
-    byGroup[groupName] = groupStocks.sort(
-      (a, b) => b.passedSequences.length - a.passedSequences.length
-    );
+    byGroup[groupName] = groupStocks.sort((a, b) => b.score - a.score);
   }
 
   // ── 5. Firebase 저장 ────────────────────────────────────────
@@ -243,7 +243,7 @@ export async function runFullScreening(): Promise<ScreeningResult> {
 
   const topStocks = [...resultsByLevel.entries()]
     .flatMap(([, stocks]) => stocks)
-    .sort((a, b) => b.score - a.score || b.passedSequences.length - a.passedSequences.length);
+    .sort((a, b) => b.score - a.score);
 
   const screeningResult: ScreeningResult = {
     runAt: new Date(),
