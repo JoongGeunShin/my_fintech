@@ -29,6 +29,7 @@ export async function getPortfolio(): Promise<VirtualPortfolio> {
     balance:        d.balance         ?? INITIAL_BALANCE,
     initialBalance: d.initialBalance  ?? INITIAL_BALANCE,
     dailyPnL:       d.dailyPnL        ?? 0,
+    dailyPnLDate:   d.dailyPnLDate    ?? '',
     totalTrades:    d.totalTrades     ?? 0,
     winTrades:      d.winTrades       ?? 0,
     isActive:       d.isActive        ?? false,
@@ -36,10 +37,12 @@ export async function getPortfolio(): Promise<VirtualPortfolio> {
 }
 
 export async function savePortfolio(partial: Partial<VirtualPortfolio>): Promise<void> {
-  await db.collection(COL_PORTFOLIO).doc(DOC_PORTFOLIO).set(
-    { ...partial, updatedAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
+  const data: Record<string, unknown> = { ...partial, updatedAt: FieldValue.serverTimestamp() };
+  // dailyPnL 저장 시 날짜도 함께 기록 — 다음 날 복구 시 리셋 판단에 사용
+  if ('dailyPnL' in partial) {
+    data.dailyPnLDate = new Date().toISOString().slice(0, 10);
+  }
+  await db.collection(COL_PORTFOLIO).doc(DOC_PORTFOLIO).set(data, { merge: true });
 }
 
 // ── 포지션 ────────────────────────────────────────────────────

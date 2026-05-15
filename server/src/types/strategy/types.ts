@@ -109,6 +109,7 @@ export interface VirtualPortfolio {
   balance: number;
   initialBalance: number;
   dailyPnL: number;
+  dailyPnLDate?: string; // 'YYYY-MM-DD' — 날짜 변경 시 dailyPnL 리셋 판단용
   totalTrades: number;
   winTrades: number;
   isActive: boolean;

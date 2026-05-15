@@ -93,20 +93,26 @@ const PHASE_CONFIG: Record<MarketPhase, PhaseConfig> = {
   PRE_CLOSE:        { canEnter: false, minScore: 0.9, timeStopMin: 1,  forceClose: true  },
 };
 
+// ── KST 기준 분 단위 시각 (서버 타임존 무관) ──────────────────────
+function kstMinutes(): number {
+  // UTC+9 고정 계산 — 서버가 UTC 환경에 배포되어도 정확히 동작
+  const kst = new Date(Date.now() + (new Date().getTimezoneOffset() + 540) * 60_000);
+  return kst.getHours() * 60 + kst.getMinutes();
+}
+
 // ── 시장 시간대 판별 ───────────────────────────────────────────
 
 function getMarketPhase(): MarketPhase {
-  const now = new Date();
-  const t   = now.getHours() * 60 + now.getMinutes();
+  const t = kstMinutes();
   if (t < 480)  return 'CLOSED';
   if (t < 540)  return 'PRE_MARKET';
-  if (t < 545)  return 'OPENING';        // 9:00~9:05
-  if (t < 570)  return 'EARLY_MORNING';  // 9:05~9:30
-  if (t < 690)  return 'MORNING_ACTIVE'; // 9:30~11:30
-  if (t < 780)  return 'LUNCH_QUIET';    // 11:30~13:00
+  if (t < 545)  return 'OPENING';          // 9:00~9:05
+  if (t < 570)  return 'EARLY_MORNING';    // 9:05~9:30
+  if (t < 690)  return 'MORNING_ACTIVE';   // 9:30~11:30
+  if (t < 780)  return 'LUNCH_QUIET';      // 11:30~13:00
   if (t < 870)  return 'AFTERNOON_ACTIVE'; // 13:00~14:30
-  if (t < 920)  return 'CLOSING_RUSH';   // 14:30~15:20
-  if (t < 930)  return 'PRE_CLOSE';      // 15:20~15:30
+  if (t < 920)  return 'CLOSING_RUSH';     // 14:30~15:20
+  if (t < 930)  return 'PRE_CLOSE';        // 15:20~15:30
   return 'CLOSED';
 }
 
@@ -168,7 +174,13 @@ class TradingEngineService {
       await this._syncRealPortfolio();
     } else {
       try {
-        this.portfolio = await getPortfolio();
+        const saved   = await getPortfolio();
+        const today   = new Date().toISOString().slice(0, 10);
+        const pnlFresh = saved.dailyPnLDate === today;
+        this.portfolio = { ...saved, dailyPnL: pnlFresh ? saved.dailyPnL : 0 };
+        if (!pnlFresh && saved.dailyPnL !== 0) {
+          console.log('[Engine] 날짜 변경 감지 → dailyPnL 리셋');
+        }
         this.position  = await getPosition();
       } catch (err) {
         console.warn('[Engine] 상태 로드 실패 (기본값 사용):', err instanceof Error ? err.message : err);
@@ -208,10 +220,18 @@ class TradingEngineService {
       ]);
 
       // 잔고·기준잔고는 KIS 실값, dailyPnL·통계는 Firebase 복구
+      // 저장 날짜가 오늘이 아니면 dailyPnL 리셋 (전날 손익이 오늘 한도에 영향 주는 것 방지)
+      const today    = new Date().toISOString().slice(0, 10);
+      const pnlFresh = saved?.dailyPnLDate === today;
+      const dailyPnL = pnlFresh ? (saved?.dailyPnL ?? 0) : 0;
+      if (!pnlFresh && (saved?.dailyPnL ?? 0) !== 0) {
+        console.log('[Engine] 날짜 변경 감지 → dailyPnL 리셋');
+      }
+
       this.portfolio = {
         balance:        availableCash,
         initialBalance: availableCash,  // 당일 시작 기준점으로 사용
-        dailyPnL:       saved?.dailyPnL    ?? 0,
+        dailyPnL,
         totalTrades:    saved?.totalTrades ?? this.portfolio.totalTrades,
         winTrades:      saved?.winTrades   ?? this.portfolio.winTrades,
         isActive:       false,
@@ -221,12 +241,16 @@ class TradingEngineService {
       if (realPositions.length > 0) {
         const pos = realPositions[0];
         const state = quantMetricsService.getState(pos.code);
+        // 재시작 시 실제 진입 시각을 KIS API로 복원할 수 없으므로
+        // 타임스탑이 즉시 발동하지 않도록 현재 시각에서 가장 긴 timeStopMin(5분)만큼 뺀 시점을 사용.
+        // 손절·익절은 정상 동작하므로 안전에는 영향 없음.
+        const safeEntryTime = new Date(Date.now() - 4 * 60_000); // 4분 전으로 가정
         this.position = {
           code:              pos.code,
           name:              pos.name,
           entryPrice:        pos.avgPrice,
           quantity:          pos.quantity,
-          entryTime:         new Date(),
+          entryTime:         safeEntryTime,
           stopLossPrice:     pos.avgPrice * (1 + STOP_LOSS_RATE),
           takeProfitPrice:   pos.avgPrice * (1 + TAKE_PROFIT_RATE),
           currentPrice:      state?.currentPrice ?? pos.avgPrice,
@@ -236,13 +260,14 @@ class TradingEngineService {
           scoreAtEntry:      state?.score ?? 0,
           entryPhase:        getMarketPhase(),
         };
-        console.log(`[Engine] 실전 포지션 동기화: ${pos.name}(${pos.code}) ${pos.quantity}주 @ ${pos.avgPrice}`);
+        console.log(`[Engine] 실전 포지션 동기화: ${pos.name}(${pos.code}) ${pos.quantity}주 @ ${pos.avgPrice} (진입시각 복원 불가 → 4분 전 가정)`);
       } else {
         this.position = null;
       }
 
       if (realPositions.length > 1) {
         console.warn(`[Engine] 실전 계좌에 ${realPositions.length}개 종목 보유 중. 첫 번째만 관리합니다.`);
+        this._hasUnmanagedPosition = true;
       }
 
       console.log(`[Engine] 실전 잔고 동기화: ${availableCash.toLocaleString()}원`);
@@ -463,8 +488,14 @@ class TradingEngineService {
         this._emitStatus();
         return;
       }
-      // 5s~30s: 시장가 체결 완료로 간주 → pending 해제 후 정상 진행
+      // 5s~30s: 시장가 체결 완료로 간주 → pending 해제
+      // SELL pending 해제 시 해당 사이클은 스킵 — 잔고 반영 전 신규 매수 방지
+      const pendingType = this.pendingOrder.type;
       this.pendingOrder = null;
+      if (pendingType === 'SELL') {
+        this._emitStatus();
+        return;
+      }
     }
 
     const phase  = getMarketPhase();

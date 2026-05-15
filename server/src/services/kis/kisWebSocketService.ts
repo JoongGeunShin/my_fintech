@@ -225,18 +225,24 @@ class KisWebSocketService {
   }
 
   private _resubscribeAll(): void {
-    for (const [code, tr] of this.orderBookSubsTr) {
-      this._sendSubscribe(tr, code);
+    // 재연결 시점의 현재 TR로 갱신 — 장전→장중 전환 후 재연결 시 TR 불일치 방지
+    const currentObTr    = this._orderBookTr();
+    const currentTradeTr = this._tradeTr();
+
+    for (const code of [...this.orderBookSubsTr.keys()]) {
+      this.orderBookSubsTr.set(code, currentObTr);
+      this._sendSubscribe(currentObTr, code);
     }
-    for (const [code, tr] of this.tradeSubsTr) {
-      this._sendSubscribe(tr, code);
+    for (const code of [...this.tradeSubsTr.keys()]) {
+      this.tradeSubsTr.set(code, currentTradeTr);
+      this._sendSubscribe(currentTradeTr, code);
     }
   }
 
-  // 동시호가(08:30) 포함 정규장(08:30~15:30) 여부
+  // 동시호가(08:30) 포함 정규장(08:30~15:30) 여부 — KST 기준 고정 계산
   private _isRegularOrSimultaneous(): boolean {
-    const now = new Date();
-    const m = now.getHours() * 60 + now.getMinutes();
+    const kst = new Date(Date.now() + (new Date().getTimezoneOffset() + 540) * 60_000);
+    const m   = kst.getHours() * 60 + kst.getMinutes();
     return m >= 510 && m < 930;
   }
 

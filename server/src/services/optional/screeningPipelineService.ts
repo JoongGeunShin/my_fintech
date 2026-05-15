@@ -11,11 +11,12 @@ const WEIGHT_SUPPORT  =  30;
 const WEIGHT_DETAIL   =  10;
 
 // ── 조건 카테고리 ─────────────────────────────────────────────
-type ConditionCategory = 'REQUIRED' | 'SUPPORT' | 'DETAIL' | 'UNKNOWN';
+// [기본]: 투자 시장 범위 정보 — 레벨/점수에 영향 없음, 통과 여부만 확인
+type ConditionCategory = 'REQUIRED' | 'BASIC' | 'SUPPORT' | 'DETAIL' | 'UNKNOWN';
 
 function getCategory(conditionName: string): ConditionCategory {
   if (conditionName.startsWith('[필수]')) return 'REQUIRED';
-  if (conditionName.startsWith('[기본]')) return 'REQUIRED';
+  if (conditionName.startsWith('[기본]')) return 'BASIC';
   if (conditionName.startsWith('[보조]')) return 'SUPPORT';
   if (conditionName.startsWith('[세부]')) return 'DETAIL';
   return 'UNKNOWN';
@@ -39,20 +40,30 @@ export interface ScreeningResult {
 const CACHE_KEY_SCREENING = 'screening:latest';
 
 // ── 가중 점수 + 레벨 판정 (my_fintech 전용) ──────────────────
+// [기본]: 시장 정보 필터 — 최소 1개 통과해야 후보 포함, 레벨/점수에는 미반영
 // score: 필수×100 + 보조×30 + 세부×10 (통과 개수 기반 세분화)
-// level: Firestore 컬렉션 호환용 (1/2/3)
+// level: 1=[필수]만, 2=[보조]포함, 3=[세부]포함
 function calcWeightedScore(
   passedSeqs: Set<number>,
+  basicSeqs: number[],
   requiredSeqs: number[],
   supportSeqs: number[],
   detailSeqs: number[]
 ): { score: number; level: number } {
+  // [기본] 조건이 존재하면 최소 1개 이상 통과해야 후보 포함
+  if (basicSeqs.length > 0) {
+    const passedBasicCount = basicSeqs.filter((s) => passedSeqs.has(s)).length;
+    if (passedBasicCount === 0) return { score: 0, level: 0 };
+  }
+
+  // [필수] 미통과 시 레벨 없음 — [기본]은 여기 포함하지 않음
   const passedReqCount = requiredSeqs.filter((s) => passedSeqs.has(s)).length;
   if (passedReqCount === 0) return { score: 0, level: 0 };
 
   const passedSupCount = supportSeqs.filter((s) => passedSeqs.has(s)).length;
   const passedDetCount = detailSeqs.filter((s) => passedSeqs.has(s)).length;
 
+  // [기본]은 점수에 반영하지 않음
   const score =
     passedReqCount * WEIGHT_REQUIRED +
     passedSupCount * WEIGHT_SUPPORT  +
@@ -142,6 +153,7 @@ export async function runFullScreening(): Promise<ScreeningResult> {
 
   // ── 3. my_fintech: 레벨 판정 ──────────────────────────────
   const myFintechInfos = groupMap.get(MAIN_GROUP) ?? [];
+  const basicSeqs    = myFintechInfos.filter((i) => i.category === 'BASIC').map((i) => i.seq);
   const requiredSeqs = myFintechInfos.filter((i) => i.category === 'REQUIRED').map((i) => i.seq);
   const supportSeqs  = myFintechInfos.filter((i) => i.category === 'SUPPORT').map((i) => i.seq);
   const detailSeqs   = myFintechInfos.filter((i) => i.category === 'DETAIL').map((i) => i.seq);
@@ -158,7 +170,7 @@ export async function runFullScreening(): Promise<ScreeningResult> {
     const myPassedSeqs = new Set<number>([...passedSeqs].filter((s) => myFintechSeqSet.has(s)));
     if (myPassedSeqs.size === 0) continue;
 
-    const { score, level } = calcWeightedScore(myPassedSeqs, requiredSeqs, supportSeqs, detailSeqs);
+    const { score, level } = calcWeightedScore(myPassedSeqs, basicSeqs, requiredSeqs, supportSeqs, detailSeqs);
     if (level === 0) continue;
 
     const meta = stockMeta.get(code);
@@ -236,9 +248,7 @@ export async function runFullScreening(): Promise<ScreeningResult> {
   // ── 6. 결과 조합 ────────────────────────────────────────────
   const byLevel: Record<number, ScreenedStock[]> = {};
   for (const [lvl, stocks] of resultsByLevel) {
-    byLevel[lvl] = stocks.sort(
-      (a, b) => b.passedSequences.length - a.passedSequences.length
-    );
+    byLevel[lvl] = stocks.sort((a, b) => b.score - a.score);
   }
 
   const topStocks = [...resultsByLevel.entries()]
