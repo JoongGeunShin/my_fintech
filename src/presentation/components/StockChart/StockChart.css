@@ -103,6 +103,24 @@
   padding: 2px 8px;
 }
 
+.sc-send-canvas-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(0,255,157,0.10);
+  border: 1px solid rgba(0,255,157,0.35);
+  border-radius: 4px;
+  color: #00ff9d;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  margin-left: 4px;
+}
+.sc-send-canvas-btn:hover {
+  background: rgba(0,255,157,0.20);
+  border-color: rgba(0,255,157,0.6);
+}
+
 /* ── 차트 영역 ───────────────────────────────────── */
 .sc-chart-area {
   flex: 1;

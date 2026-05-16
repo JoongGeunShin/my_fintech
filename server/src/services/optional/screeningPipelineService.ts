@@ -3,12 +3,20 @@ import { memCache, TTL } from '../../utils/cache.js';
 import { getOptionalSearchItem } from './optionalSearchItemService.js';
 import { getOptionalSearchList } from './optionalSearchListService.js';
 
-const MAIN_GROUP = 'my_fintech';
+const MAIN_GROUP = process.env.SCREENING_MAIN_GROUP ?? 'my_fintech';
 
-// my_fintech 카테고리별 가중치 (필수 > 보조 > 세부)
-const WEIGHT_REQUIRED = 100;
-const WEIGHT_SUPPORT  =  30;
-const WEIGHT_DETAIL   =  10;
+// 조건 카테고리별 가중치 (환경변수로 설정)
+function requireEnvInt(key: string): number {
+  const v = process.env[key];
+  if (v === undefined || v === '') throw new Error(`[Config] 필수 환경변수 누락: ${key}`);
+  const n = parseInt(v, 10);
+  if (isNaN(n)) throw new Error(`[Config] 환경변수 ${key} 정수 변환 실패: "${v}"`);
+  return n;
+}
+
+const WEIGHT_REQUIRED = requireEnvInt('SCREENING_WEIGHT_REQUIRED');
+const WEIGHT_SUPPORT  = requireEnvInt('SCREENING_WEIGHT_SUPPORT');
+const WEIGHT_DETAIL   = requireEnvInt('SCREENING_WEIGHT_DETAIL');
 
 // ── 조건 카테고리 ─────────────────────────────────────────────
 // [기본]: 투자 시장 범위 정보 — 레벨/점수에 영향 없음, 통과 여부만 확인

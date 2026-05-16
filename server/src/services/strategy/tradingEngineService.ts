@@ -30,22 +30,29 @@ import { getKisScreenedStocks } from '../kis/kisScreeningService.js';
 import { preMarketFilterService } from '../optional/preMarketFilterService.js';
 import { quantMetricsService } from './quantMetricsService.js';
 
-// ── 상수 ──────────────────────────────────────────────────────
-const STOP_LOSS_RATE        = -0.045;  // 고정 손절 상한 (-4.5%)
-const TAKE_PROFIT_RATE      =  0.020;  // 1차 익절 (+2%)
-const ENHANCED_PROFIT_RATE  =  0.030;  // 고수익 유지/익절 (+3%)
-const JUPO_QUICK_PROFIT     =  0.015;  // 주포 따라가기 빠른 익절 (+1.5%)
-const RISK_PER_TRADE        =  0.05;   // 계좌 잔고 대비 최대 위험 5%
-const MAX_POSITION_RATE     =  0.50;   // 단일 포지션 최대 50% 상한
-
-// ── 수수료/세금 (KIS 온라인 기준) ──────────────────────────────
+// ── 수수료/세금 (KIS 온라인 기준, 법정 고정값) ────────────────────
 const COMMISSION_RATE      = 0.00015; // 수수료 0.015% (매수·매도 각각)
 const TRANSACTION_TAX_RATE = 0.0015;  // 증권거래세 0.15% (KOSPI, 매도 시)
 
-// ── 일간 손익 한도 ──────────────────────────────────────────────
-const DAILY_LOSS_LIMIT   = -0.05;  // 일간 손실 -5% 이하 → 매매 중단
+// ── 전략 파라미터 (환경변수 필수) ─────────────────────────────────
+function requireEnvFloat(key: string): number {
+  const v = process.env[key];
+  if (v === undefined || v === '') {
+    throw new Error(`[Config] 필수 환경변수 누락: ${key}`);
+  }
+  const n = parseFloat(v);
+  if (isNaN(n)) throw new Error(`[Config] 환경변수 ${key} 숫자 변환 실패: "${v}"`);
+  return n;
+}
 
-const MIN_VRATE_TO_BUY   = 1.5;
+const STOP_LOSS_RATE       = requireEnvFloat('TRADE_STOP_LOSS_RATE');       // 손절 기준 (음수, 예: -0.045)
+const TAKE_PROFIT_RATE     = requireEnvFloat('TRADE_TAKE_PROFIT_RATE');     // 1차 익절 기준
+const ENHANCED_PROFIT_RATE = requireEnvFloat('TRADE_ENHANCED_PROFIT_RATE'); // 고수익 익절 기준
+const JUPO_QUICK_PROFIT    = requireEnvFloat('TRADE_JUPO_QUICK_PROFIT');    // 주포 따라가기 빠른 익절
+const RISK_PER_TRADE       = requireEnvFloat('TRADE_RISK_PER_TRADE');       // 계좌 대비 위험 비율
+const MAX_POSITION_RATE    = requireEnvFloat('TRADE_MAX_POSITION_RATE');    // 단일 포지션 최대 비율
+const DAILY_LOSS_LIMIT     = requireEnvFloat('TRADE_DAILY_LOSS_LIMIT');     // 일간 손실 한도 (음수)
+const MIN_VRATE_TO_BUY     = requireEnvFloat('TRADE_MIN_VRATE_TO_BUY');     // 최소 거래량 비율
 
 const CYCLE_INTERVAL_MS  = 1_000;       // 1초마다 사이클
 const REFRESH_INTERVAL_MS = 5 * 60_000; // 5분마다 종목 갱신

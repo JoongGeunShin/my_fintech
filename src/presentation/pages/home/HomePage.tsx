@@ -39,6 +39,10 @@ export default function HomePage() {
   const [selectedName, setSelectedName] = useState<string | undefined>(undefined);
   const [chartVisible, setChartVisible] = useState(false);
   const [isNxtSupported, setIsNxtSupported] = useState<boolean | null>(null);
+  const [chartSnapshot, setChartSnapshot] = useState<string | undefined>(undefined);
+  const [snapshotToast, setSnapshotToast] = useState(false);
+
+  const canvasSectionRef = useRef<HTMLDivElement>(null);
 
   const { orderBook, isConnected: obConnected } = useRealtimeOrderBook(selectedCode);
   const { latestTrade, trades, isConnected: trConnected } = useRealtimeTrade(selectedCode, 50);
@@ -86,18 +90,32 @@ export default function HomePage() {
     setSelectedName((prev) => prev === name ? undefined : name);
   }, []);
 
+  const handleSendToCanvas = useCallback((imageUrl: string) => {
+    setChartSnapshot(imageUrl);
+    setSnapshotToast(true);
+    setTimeout(() => setSnapshotToast(false), 2000);
+    canvasSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const handleClearCanvas = useCallback(() => {
+    clearCanvas();
+    setChartSnapshot(undefined);
+  }, [clearCanvas]);
+
   return (
     <div className="home-root">
 
       {/* ── 상단 캔버스 섹션 ─────────────────────────────────── */}
-      <div className="home-canvas-section">
+      <div className="home-canvas-section" ref={canvasSectionRef}>
         <div className="home-canvas-header">
           <div className="home-canvas-title">
             <span className="dot pulse" />
             Collab Canvas
+            {chartSnapshot && <span className="home-canvas-badge">차트 배경 적용됨</span>}
           </div>
           <div className="home-canvas-meta">
             <span>활동량: <strong>{typeCount}</strong></span>
+            {snapshotToast && <span className="home-snapshot-toast">차트가 캔버스에 올라갔습니다</span>}
             <Link to="/trading" style={{
               padding: '5px 12px',
               borderRadius: 6,
@@ -111,7 +129,7 @@ export default function HomePage() {
             }}>
               자동매매 →
             </Link>
-            <button className="home-clear-btn" onClick={clearCanvas}>캔버스 초기화</button>
+            <button className="home-clear-btn" onClick={handleClearCanvas}>캔버스 초기화</button>
           </div>
         </div>
         <div className="main-canvas-wrapper" ref={canvasWrapperRef}>
@@ -122,6 +140,7 @@ export default function HomePage() {
             onMouseUp={handleMouseUp}
             width={canvasDimensions.width}
             height={canvasDimensions.height}
+            backgroundImage={chartSnapshot}
           />
         </div>
       </div>
@@ -154,7 +173,7 @@ export default function HomePage() {
             <>
               {/* 차트 */}
               <div className="home-chart-wrap">
-                <StockChart code={selectedCode} name={selectedName} />
+                <StockChart code={selectedCode} name={selectedName} onSendToCanvas={handleSendToCanvas} />
               </div>
 
               {/* 호가 + 시세 */}

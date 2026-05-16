@@ -8,15 +8,40 @@ import { kisWebSocketService } from '../kis/kisWebSocketService.js';
 import { calcATR, getMinuteBars } from '../kis/minuteChartService.js';
 import { memCache } from '../../utils/cache.js';
 
-const TIS_WINDOW         = 100;   // TIS 계산 최근 틱 수
-const ES_WINDOW          = 50;    // 체결강도 롤링 윈도우
-const WALL_MULTIPLIER    = 3;     // 평균 대비 N배 이상 → 벽 판정
-const PRICE_HISTORY      = 5;     // 단기 가격 추세 참조 틱 수
-const BOR_HISTORY        = 10;    // BOR 변동성 추적 기록 수
+const TIS_WINDOW          = 100;   // TIS 계산 최근 틱 수
+const ES_WINDOW           = 50;    // 체결강도 롤링 윈도우
+const PRICE_HISTORY       = 5;     // 단기 가격 추세 참조 틱 수
+const BOR_HISTORY         = 10;    // BOR 변동성 추적 기록 수
 const WALL_SIGNAL_HOLD_MS = 3_000; // 벽 소멸 신호를 3초간 유지 (1초 사이클 미스 방지)
-// 분봉 평균 거래량 최소 기준: 이 미만이면 저유동성 종목으로 판단해 진입 차단
-// 3,000주/분 ≈ 일평균 ~117만주 이상 (장 중 지속 유동성 확인용)
-const MIN_AVG_MINUTE_VOL = 3_000;
+
+// ── 전략 파라미터 (환경변수 필수) ─────────────────────────────────
+function requireEnvFloat(key: string): number {
+  const v = process.env[key];
+  if (v === undefined || v === '') {
+    throw new Error(`[Config] 필수 환경변수 누락: ${key}`);
+  }
+  const n = parseFloat(v);
+  if (isNaN(n)) throw new Error(`[Config] 환경변수 ${key} 숫자 변환 실패: "${v}"`);
+  return n;
+}
+
+const WALL_MULTIPLIER    = requireEnvFloat('QUANT_WALL_MULTIPLIER');
+const MIN_AVG_MINUTE_VOL = requireEnvFloat('QUANT_MIN_MINUTE_VOLUME');
+
+// 매매 신호 임계값
+const SCORE_BUY_THRESHOLD  = requireEnvFloat('QUANT_BUY_SCORE_THRESHOLD');
+const SCORE_SELL_THRESHOLD = requireEnvFloat('QUANT_SELL_SCORE_THRESHOLD');
+const BUY_BOR_MAX          = requireEnvFloat('QUANT_BUY_BOR_MAX');
+const SELL_BOR_MIN         = requireEnvFloat('QUANT_SELL_BOR_MIN');
+const ES_BUY_MIN           = requireEnvFloat('QUANT_ES_BUY_MIN');
+
+// 종합 점수 가중치 (합계 = 1.0)
+const WEIGHT_BOR  = requireEnvFloat('QUANT_WEIGHT_BOR');
+const WEIGHT_TIS  = requireEnvFloat('QUANT_WEIGHT_TIS');
+const WEIGHT_CVD  = requireEnvFloat('QUANT_WEIGHT_CVD');
+const WEIGHT_VWAP = requireEnvFloat('QUANT_WEIGHT_VWAP');
+const WEIGHT_ES   = requireEnvFloat('QUANT_WEIGHT_ES');
+const WEIGHT_JUPO = requireEnvFloat('QUANT_WEIGHT_JUPO');
 
 type SignalListener = (state: StockQuantState) => void;
 
@@ -334,12 +359,12 @@ class QuantMetricsService {
 
     // 5. 종합 점수 (가중합산)
     s.score = clamp(
-      borNorm  * 0.20 +
-      tisNorm  * 0.25 +
-      cvdNorm  * 0.15 +
-      vwapNorm * 0.15 +
-      esNorm   * 0.15 +   // 체결강도 추가
-      s.majorPlayerScore * 0.10,
+      borNorm  * WEIGHT_BOR  +
+      tisNorm  * WEIGHT_TIS  +
+      cvdNorm  * WEIGHT_CVD  +
+      vwapNorm * WEIGHT_VWAP +
+      esNorm   * WEIGHT_ES   +
+      s.majorPlayerScore * WEIGHT_JUPO,
       -1, 1
     );
 
@@ -357,21 +382,21 @@ class QuantMetricsService {
 
     // 7. 매매 신호 판정
     const vrateOK = !s.vrateReliable || s.vrate > 1.5;
-    // 체결강도 60% 이상 OR 매도벽 소멸(즉각 진입)
-    const esOK = s.executionStrength > 60 || s.wallAbsorbedAsk;
+    // 체결강도 기준 이상 OR 매도벽 소멸(즉각 진입)
+    const esOK = s.executionStrength > ES_BUY_MIN || s.wallAbsorbedAsk;
 
     const isBuy =
-      s.score > 0.6   &&
-      vrateOK          &&
-      s.cvdDirection === 'up' &&
-      s.bor < 0.9      &&
+      s.score > SCORE_BUY_THRESHOLD  &&
+      vrateOK                         &&
+      s.cvdDirection === 'up'         &&
+      s.bor < BUY_BOR_MAX             &&
       esOK;
 
     const isSell =
-      s.score < -0.6  &&
-      vrateOK          &&
-      s.cvdDirection === 'down' &&
-      s.bor > 1.1;
+      s.score < -SCORE_SELL_THRESHOLD &&
+      vrateOK                         &&
+      s.cvdDirection === 'down'       &&
+      s.bor > SELL_BOR_MIN;
 
     s.signal = isBuy ? 'BUY' : isSell ? 'SELL' : 'HOLD';
   }

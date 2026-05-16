@@ -9,7 +9,11 @@
       "Bash(xargs grep -l \"H0STCNT0\\\\|H0STASP0\\\\|FHKST03010200\")",
       "Bash(Get-ChildItem -Path src -Recurse -Filter \"*.ts\" -o -Filter \"*.tsx\")",
       "Bash(Select-Object FullName)",
-      "Bash(xargs grep -l \"market\\\\|hours\\\\|open\\\\|close\")"
+      "Bash(xargs grep -l \"market\\\\|hours\\\\|open\\\\|close\")",
+      "Bash(Get-ChildItem -Path \"E:\\\\React\\\\projects\\\\my_fintech\\\\src\" -Recurse -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(ls server/)",
+      "Bash(cat .gitignore)"
     ]
   }
 }

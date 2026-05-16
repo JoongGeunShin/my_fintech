@@ -17,6 +17,7 @@ type PeriodType = 'D' | 'M' | 'Y';
 interface StockChartProps {
   code: string | null;
   name?: string;
+  onSendToCanvas?: (imageUrl: string) => void;
 }
 
 const COLOR = {
@@ -70,7 +71,7 @@ async function fetchCandles(code: string, startDate: string, endDate: string, pe
   return [];
 }
 
-export default function StockChart({ code, name }: StockChartProps) {
+export default function StockChart({ code, name, onSendToCanvas }: StockChartProps) {
   const chartRef  = useRef<HTMLCanvasElement>(null);
   const volRef    = useRef<HTMLCanvasElement>(null);
   const crossRef  = useRef<HTMLCanvasElement>(null);
@@ -182,6 +183,28 @@ export default function StockChart({ code, name }: StockChartProps) {
     window.addEventListener('mouseup', onUp);
     return () => window.removeEventListener('mouseup', onUp);
   }, []);
+
+  const captureChart = useCallback(() => {
+    const chartCanvas = chartRef.current;
+    const volCanvas = volRef.current;
+    if (!chartCanvas || !volCanvas || !onSendToCanvas) return;
+
+    const W = chartCanvas.width;
+    const CH = chartCanvas.height;
+    const VH = volCanvas.height;
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = W;
+    offscreen.height = CH + 1 + VH;
+
+    const ctx = offscreen.getContext('2d')!;
+    ctx.fillStyle = COLOR.BG;
+    ctx.fillRect(0, 0, W, offscreen.height);
+    ctx.drawImage(chartCanvas, 0, 0);
+    ctx.drawImage(volCanvas, 0, CH + 1);
+
+    onSendToCanvas(offscreen.toDataURL('image/png'));
+  }, [onSendToCanvas]);
 
   // ── 캔버스 렌더링 ─────────────────────────────────────────
   useEffect(() => {
@@ -333,6 +356,11 @@ export default function StockChart({ code, name }: StockChartProps) {
             </button>
           ))}
           <button className="sc-refresh" onClick={()=>code&&fetchData(code,period)} title="새로고침">↺</button>
+          {onSendToCanvas && (
+            <button className="sc-send-canvas-btn" onClick={captureChart} title="현재 차트를 캔버스로 올립니다">
+              캔버스로 올리기
+            </button>
+          )}
         </div>
       </div>
       <div className="sc-chart-area">
